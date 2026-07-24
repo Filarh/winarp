@@ -59,8 +59,8 @@ jobs:
       - name: Write local.properties
         working-directory: android
         run: |
+          # Prefer android.ndkVersion from Gradle; only set sdk.dir here
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> local.properties
           cat local.properties
 
       - name: Assemble Debug APK

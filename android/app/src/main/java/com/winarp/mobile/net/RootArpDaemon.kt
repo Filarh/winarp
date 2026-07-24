@@ -1,7 +1,7 @@
 package com.winarp.mobile.net
 
 import android.content.Context
-import android.os.Process
+import android.os.Process as AndroidProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class RootArpDaemon(private val context: Context) {
     private val mutex = Mutex()
-    private var process: Process? = null
+    private var process: java.lang.Process? = null
     private var writer: OutputStreamWriter? = null
     private var reader: BufferedReader? = null
     private val started = AtomicBoolean(false)
@@ -196,12 +196,12 @@ object RootArpEntry {
                     }
                 }
                 if (!loaded) {
-                    println("ERR native load failed uid=${Process.myUid()}")
+                    println("ERR native load failed uid=${AndroidProcess.myUid()}")
                     return
                 }
             }
 
-            println("READY uid=${Process.myUid()}")
+            println("READY uid=${AndroidProcess.myUid()}")
             System.out.flush()
 
             val reader = BufferedReader(InputStreamReader(System.`in`, Charsets.UTF_8))

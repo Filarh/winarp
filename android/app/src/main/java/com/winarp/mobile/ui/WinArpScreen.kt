@@ -45,7 +45,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -618,7 +617,7 @@ private fun HostRow(host: HostInfo, selected: Boolean, onToggle: () -> Unit) {
             .clickable { onToggle() }
     ) {
         Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -629,19 +628,21 @@ private fun HostRow(host: HostInfo, selected: Boolean, onToggle: () -> Unit) {
                     uncheckedColor = TextSecondary
                 )
             )
-            Column(Modifier = Modifier.weight(1f)) {
-                Text(host.ip, color = Color.White, fontWeight = FontWeight.SemiBold)
-                Text(host.mac, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+            ) {
+                Text(text = host.ip, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(text = host.mac, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    host.name.ifBlank { "-" },
-                    color = if (host.name != "-" && host.name.isNotBlank()) Mint else TextSecondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = host.name.ifBlank { "-" },
+                color = if (host.name != "-" && host.name.isNotBlank()) Mint else TextSecondary,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
