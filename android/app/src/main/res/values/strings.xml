@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WinARP</string>
+    <string name="disclaimer">仅用于 CTF / 授权沙箱测试，请勿用于未授权网络</string>
+</resources>

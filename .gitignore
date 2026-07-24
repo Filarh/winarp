@@ -1,0 +1,25 @@
+# Go
+*.exe
+*.test
+*.out
+/winarp
+
+# Android / IDE
+.idea/
+*.iml
+.gradle/
+local.properties
+**/build/
+**/.cxx/
+**/.externalNativeBuild/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+.DS_Store
+captures/
+*.hprof
+
+# OS
+Thumbs.db
