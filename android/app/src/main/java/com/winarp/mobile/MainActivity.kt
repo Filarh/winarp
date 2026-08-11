@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winarp.mobile.data.AppScreen
 import com.winarp.mobile.ui.MainViewModel
 import com.winarp.mobile.ui.SnifferScreen
+import com.winarp.mobile.ui.SpoofScreen
 import com.winarp.mobile.ui.WinArpScreen
 import com.winarp.mobile.ui.theme.NightBg
 import com.winarp.mobile.ui.theme.WinArpTheme
@@ -61,6 +62,28 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        AppScreen.Spoof -> {
+                            val running by vm.webRunning.collectAsStateWithLifecycle()
+                            val requests by vm.webRequests.collectAsStateWithLifecycle()
+                            val wlog by vm.webLog.collectAsStateWithLifecycle()
+                            SpoofScreen(
+                                config = state.spoofConfig,
+                                html = state.spoofHtml,
+                                running = running,
+                                requests = requests,
+                                log = wlog,
+                                docRootPath = vm.spoofDocRootPath(),
+                                onBack = vm::closeSpoof,
+                                onToggle = vm::toggleSpoof,
+                                onMode = vm::updateSpoofMode,
+                                onRedirectUrl = vm::updateRedirectUrl,
+                                onTargetHosts = vm::updateTargetHosts,
+                                onHtml = vm::updateSpoofHtml,
+                                onToggleCaptive = vm::toggleCaptive,
+                                onToggleSpa = vm::toggleSpa
+                            )
+                        }
+
                         AppScreen.Main -> WinArpScreen(
                             state = state,
                             onRefreshIfaces = vm::refreshIfaces,
@@ -76,6 +99,7 @@ class MainActivity : ComponentActivity() {
                             onOneWay = vm::updateOneWay,
                             onToggleMitm = vm::updateForwardMitm,
                             onOpenSniffer = vm::openSniffer,
+                            onOpenSpoof = vm::openSpoof,
                             onScan = vm::scan,
                             onSelectAll = vm::selectAllHosts,
                             onToggleHost = vm::toggleHost,

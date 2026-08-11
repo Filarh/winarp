@@ -43,6 +43,21 @@ object RootNet {
         RootHelper.execSu(script)
     }
 
+    /** Transparently REDIRECT forwarded victim HTTP (:80) into the local page server on [port]. */
+    suspend fun enableHttpRedirect(ifName: String, port: Int): String? = withContext(Dispatchers.IO) {
+        val script =
+            "iptables -t nat -C PREROUTING -i $ifName -p tcp --dport 80 -j REDIRECT --to-ports $port 2>/dev/null || " +
+                "iptables -t nat -I PREROUTING 1 -i $ifName -p tcp --dport 80 -j REDIRECT --to-ports $port; echo DONE"
+        val (code, out) = RootHelper.execSu(script)
+        if (out.contains("DONE") && code == 0) null else out.trim().ifBlank { "http redirect failed (code=$code)" }
+    }
+
+    suspend fun disableHttpRedirect(ifName: String, port: Int) {
+        RootHelper.execSu(
+            "iptables -t nat -D PREROUTING -i $ifName -p tcp --dport 80 -j REDIRECT --to-ports $port 2>/dev/null; echo DONE"
+        )
+    }
+
     // proto/port pairs blocked to force cleartext: QUIC (recovers TCP TLS + SNI) and DoT (recovers plaintext DNS)
     private val plaintextRules = listOf("udp" to 443, "udp" to 853, "tcp" to 853)
 

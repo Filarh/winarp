@@ -1,7 +1,7 @@
 package com.winarp.mobile.data
 
 /** Which top-level screen is shown. */
-enum class AppScreen { Main, Sniffer }
+enum class AppScreen { Main, Sniffer, Spoof }
 
 /** One remote service (proto + port) a peer was seen using. */
 data class CaptureEndpoint(

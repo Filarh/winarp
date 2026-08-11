@@ -103,6 +103,7 @@ fun WinArpScreen(
     onOneWay: (Boolean) -> Unit,
     onToggleMitm: (Boolean) -> Unit,
     onOpenSniffer: () -> Unit,
+    onOpenSpoof: () -> Unit,
     onScan: () -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onToggleHost: (String) -> Unit,
@@ -366,6 +367,16 @@ fun WinArpScreen(
                         Icon(Icons.Outlined.WifiFind, null)
                         Spacer(Modifier.width(6.dp))
                         Text("Live traffic (sniffer)")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onOpenSpoof,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Outlined.Bolt, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Spoof page (fake page / captive portal)")
                     }
                 }
             }
