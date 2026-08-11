@@ -43,6 +43,31 @@ object RootNet {
         RootHelper.execSu(script)
     }
 
+    // proto/port pairs blocked to force cleartext: QUIC (recovers TCP TLS + SNI) and DoT (recovers plaintext DNS)
+    private val plaintextRules = listOf("udp" to 443, "udp" to 853, "tcp" to 853)
+
+    /**
+     * Force victims onto cleartext resolvers/transports by rejecting DoT (853) and QUIC (UDP/443)
+     * on forwarded traffic, so DNS (port 53) and TLS SNI become visible. Rules are inserted above
+     * the MITM ACCEPT so they take precedence. Reverts when [enable] is false. null = ok.
+     */
+    suspend fun forcePlaintext(ifName: String, enable: Boolean): String? = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        for ((proto, port) in plaintextRules) {
+            if (enable) {
+                sb.append("iptables -C FORWARD -i $ifName -p $proto --dport $port -j REJECT 2>/dev/null || ")
+                sb.append("iptables -I FORWARD 1 -i $ifName -p $proto --dport $port -j REJECT 2>/dev/null || ")
+                sb.append("iptables -I FORWARD 1 -i $ifName -p $proto --dport $port -j DROP; ")
+            } else {
+                sb.append("iptables -D FORWARD -i $ifName -p $proto --dport $port -j REJECT 2>/dev/null; ")
+                sb.append("iptables -D FORWARD -i $ifName -p $proto --dport $port -j DROP 2>/dev/null; ")
+            }
+        }
+        sb.append("echo DONE")
+        val (code, out) = RootHelper.execSu(sb.toString())
+        if (out.contains("DONE") && code == 0) null else out.trim().ifBlank { "plaintext rules failed (code=$code)" }
+    }
+
     /**
      * Start a live tcpdump on [ifName], optionally filtered to a single [host].
      * The caller reads the process stdout line by line and MUST destroy the process to stop.

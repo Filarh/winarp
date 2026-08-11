@@ -52,10 +52,12 @@ class MainActivity : ComponentActivity() {
                                 peers = peers,
                                 raw = raw,
                                 showRaw = state.showRaw,
+                                forcePlaintext = state.forcePlaintext,
                                 onBack = vm::closeSniffer,
                                 onToggleCapture = vm::toggleCapture,
                                 onClear = vm::clearCapture,
-                                onToggleRaw = vm::toggleRaw
+                                onToggleRaw = vm::toggleRaw,
+                                onToggleForcePlaintext = vm::toggleForcePlaintext
                             )
                         }
 

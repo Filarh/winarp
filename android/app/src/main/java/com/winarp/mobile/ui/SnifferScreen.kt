@@ -59,10 +59,12 @@ fun SnifferScreen(
     peers: List<CapturePeer>,
     raw: List<String>,
     showRaw: Boolean,
+    forcePlaintext: Boolean,
     onBack: () -> Unit,
     onToggleCapture: () -> Unit,
     onClear: () -> Unit,
-    onToggleRaw: () -> Unit
+    onToggleRaw: () -> Unit,
+    onToggleForcePlaintext: () -> Unit
 ) {
     Scaffold(
         containerColor = NightBg,
@@ -108,6 +110,21 @@ fun SnifferScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onToggleForcePlaintext) {
+                            Text(
+                                if (forcePlaintext) "✓ Force plaintext" else "Force plaintext",
+                                color = if (forcePlaintext) Mint else Accent
+                            )
+                        }
+                        Text(
+                            "block DoT/QUIC → reveal domains",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
                 item {
                     Text(
                         "Peers · ${peers.size}",

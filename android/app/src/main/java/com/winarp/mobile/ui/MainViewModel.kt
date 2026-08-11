@@ -15,6 +15,7 @@ import com.winarp.mobile.net.LanScanner
 import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.RootHelper
+import com.winarp.mobile.net.RootNet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +42,7 @@ data class MainUiState(
     val forwardMitm: Boolean = false,
     val screen: AppScreen = AppScreen.Main,
     val showRaw: Boolean = false,
+    val forcePlaintext: Boolean = false,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -350,7 +352,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeSniffer() {
         capture.setRawEnabled(false)
-        _state.update { it.copy(screen = AppScreen.Main, showRaw = false) }
+        if (_state.value.forcePlaintext) {
+            _state.value.selectedIface?.let { iface ->
+                viewModelScope.launch { RootNet.forcePlaintext(iface.name, false) }
+            }
+        }
+        _state.update { it.copy(screen = AppScreen.Main, showRaw = false, forcePlaintext = false) }
+    }
+
+    /** Block DoT (853) + QUIC (UDP/443) so victims fall back to cleartext DNS/TLS (domains appear). */
+    fun toggleForcePlaintext() {
+        val iface = _state.value.selectedIface ?: return
+        val on = !_state.value.forcePlaintext
+        _state.update { it.copy(forcePlaintext = on) }
+        viewModelScope.launch {
+            val err = RootNet.forcePlaintext(iface.name, on)
+            when {
+                err != null -> appendLog("[!] force plaintext: $err")
+                on -> appendLog("[+] force plaintext ON — blocked DoT(853) + QUIC(443)")
+                else -> appendLog("[+] force plaintext OFF")
+            }
+        }
     }
 
     /** Start/stop the capture from the sniffer screen. */
