@@ -156,7 +156,10 @@ private fun PeerRow(peer: CapturePeer) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (peer.host != null) peer.ip else topPorts(peer),
+                    buildString {
+                        if (peer.host != null) append(peer.ip).append("  ·  ")
+                        append(sourcesLabel(peer))
+                    },
                     color = TextSecondary,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
@@ -171,6 +174,9 @@ private fun PeerRow(peer: CapturePeer) {
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             Text("↑ ${fmtBytes(peer.upBytes)}   ↓ ${fmtBytes(peer.downBytes)}", color = TextSecondary, fontSize = 12.sp)
+            if (peer.sources.isNotEmpty()) {
+                Text("devices: ${peer.sources.joinToString(", ")}", color = Mint, fontSize = 12.sp)
+            }
             Spacer(Modifier.height(6.dp))
             peer.endpoints.take(12).forEach { ep ->
                 Row(
@@ -228,8 +234,14 @@ private fun RawPanel(raw: List<String>) {
     }
 }
 
-private fun topPorts(peer: CapturePeer): String =
-    peer.endpoints.take(3).joinToString("  ") { "${it.proto}/${if (it.port >= 0) it.port else "-"}" }
+private fun sourcesLabel(peer: CapturePeer): String {
+    if (peer.sources.isEmpty()) {
+        return peer.endpoints.take(3).joinToString("  ") { "${it.proto}/${if (it.port >= 0) it.port else "-"}" }
+    }
+    val shown = peer.sources.take(2).joinToString(", ")
+    val extra = peer.sources.size - 2
+    return "from $shown" + if (extra > 0) " +$extra" else ""
+}
 
 private fun svcName(port: Int): String = when (port) {
     53 -> "DNS"

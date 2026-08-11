@@ -17,14 +17,15 @@ data class CaptureEndpoint(
  */
 data class CapturePeer(
     val ip: String,
-    val host: String?,        // domain / reverse-DNS if known, else null
+    val host: String?,        // domain (from DNS) / reverse-DNS if known, else null
     val packets: Int,
     val bytes: Long,
-    val upBytes: Long,        // target -> peer
-    val downBytes: Long,      // peer -> target
+    val upBytes: Long,        // local -> peer
+    val downBytes: Long,      // peer -> local
     val firstSeenMs: Long,
     val lastSeenMs: Long,
-    val endpoints: List<CaptureEndpoint>
+    val endpoints: List<CaptureEndpoint>,
+    val sources: List<String> = emptyList()   // which local devices talked to this peer
 ) {
     val id: String get() = ip
 }

@@ -343,7 +343,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         _state.update { it.copy(screen = AppScreen.Sniffer) }
         if (!capture.running.value) {
-            capture.start(viewModelScope, iface.name, firstTargetIp())
+            capture.start(viewModelScope, iface.name, iface.ip, iface.prefixLength)
         }
     }
 
@@ -358,7 +358,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val iface = _state.value.selectedIface ?: return
-        capture.start(viewModelScope, iface.name, firstTargetIp())
+        capture.start(viewModelScope, iface.name, iface.ip, iface.prefixLength)
     }
 
     fun clearCapture() = capture.clear()
