@@ -53,6 +53,17 @@ class CaptureEngine {
     private val ipToDomain = HashMap<String, String>()
     private val txidToName = LinkedHashMap<String, String>()
     @Volatile private var clearRequested = false
+    @Volatile private var rawEnabled = false
+
+    /** Raw packet feed is off by default (rendering it lags weak devices). Turn on only on demand. */
+    fun setRawEnabled(on: Boolean) {
+        rawEnabled = on
+        if (!on) {
+            _raw.value = emptyList()
+        } else if (!_running.value) {
+            _raw.value = rawBuf.toList()
+        }
+    }
 
     private var localNet = 0L
     private var localMask = 0L
@@ -278,9 +289,9 @@ class CaptureEngine {
                     sources = p.sources.toList()
                 )
             }.sortedByDescending { it.bytes }
-            ps to rawBuf.toList()
+            ps to (if (rawEnabled) rawBuf.toList() else emptyList())
         }
         _peers.value = peersSnap
-        _raw.value = rawSnap
+        if (rawEnabled) _raw.value = rawSnap
     }
 }

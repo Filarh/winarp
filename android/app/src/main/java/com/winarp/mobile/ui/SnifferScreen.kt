@@ -58,9 +58,11 @@ fun SnifferScreen(
     running: Boolean,
     peers: List<CapturePeer>,
     raw: List<String>,
+    showRaw: Boolean,
     onBack: () -> Unit,
     onToggleCapture: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onToggleRaw: () -> Unit
 ) {
     Scaffold(
         containerColor = NightBg,
@@ -128,8 +130,22 @@ fun SnifferScreen(
                 }
             }
 
-            // The noise: raw packet feed, separate from the app log
-            RawPanel(raw)
+            // The noise: raw packet feed is opt-in (rendering it lags weak devices)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                TextButton(onClick = onToggleRaw) {
+                    Text(
+                        if (showRaw) "Hide raw packets" else "Show raw packets",
+                        color = Accent
+                    )
+                }
+            }
+            if (showRaw) {
+                RawPanel(raw)
+            }
         }
     }
 }
@@ -224,7 +240,7 @@ private fun RawPanel(raw: List<String>) {
                 .verticalScroll(scroll)
         ) {
             Text(
-                text = raw.takeLast(200).asReversed().joinToString("\n").ifBlank { "…" },
+                text = raw.takeLast(120).asReversed().joinToString("\n").ifBlank { "…" },
                 color = Color(0xFFB7C7E6),
                 fontSize = 10.sp,
                 lineHeight = 14.sp,

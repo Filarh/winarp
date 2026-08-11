@@ -40,6 +40,7 @@ data class MainUiState(
     val oneWay: Boolean = false,
     val forwardMitm: Boolean = false,
     val screen: AppScreen = AppScreen.Main,
+    val showRaw: Boolean = false,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -348,7 +349,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeSniffer() {
-        _state.update { it.copy(screen = AppScreen.Main) }
+        capture.setRawEnabled(false)
+        _state.update { it.copy(screen = AppScreen.Main, showRaw = false) }
     }
 
     /** Start/stop the capture from the sniffer screen. */
@@ -362,6 +364,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearCapture() = capture.clear()
+
+    /** Raw packet feed is opt-in: not collected/rendered until the user asks for it. */
+    fun toggleRaw() {
+        val on = !_state.value.showRaw
+        _state.update { it.copy(showRaw = on) }
+        capture.setRawEnabled(on)
+    }
 
     /** Pick a single host to filter the sniff/attack: explicit From, else target spec, else a selected host. */
     private fun firstTargetIp(): String? {

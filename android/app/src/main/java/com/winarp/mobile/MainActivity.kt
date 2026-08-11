@@ -51,9 +51,11 @@ class MainActivity : ComponentActivity() {
                                 running = running,
                                 peers = peers,
                                 raw = raw,
+                                showRaw = state.showRaw,
                                 onBack = vm::closeSniffer,
                                 onToggleCapture = vm::toggleCapture,
-                                onClear = vm::clearCapture
+                                onClear = vm::clearCapture,
+                                onToggleRaw = vm::toggleRaw
                             )
                         }
 
