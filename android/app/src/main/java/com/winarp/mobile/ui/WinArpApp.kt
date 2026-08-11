@@ -41,6 +41,18 @@ import com.winarp.mobile.ui.theme.TextSecondary
 @Composable
 fun WinArpRoot(vm: MainViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val editIp = state.editHostIp
+    if (editIp != null) {
+        HostControlScreen(
+            ip = editIp,
+            name = state.hosts.firstOrNull { it.ip == editIp }?.name ?: "",
+            control = state.hostControls[editIp] ?: com.winarp.mobile.data.HostControl(),
+            onEdit = vm::editHostControl,
+            onApply = vm::applyHostControls,
+            onBack = vm::closeHostControls
+        )
+        return
+    }
     if (state.showSettings) {
         SettingsScreen(
             ifaceLabel = state.selectedIface?.toString() ?: "No NIC selected",
@@ -98,9 +110,7 @@ fun WinArpRoot(vm: MainViewModel) {
                     onSelectAll = vm::selectAllHosts,
                     onToggleHost = vm::toggleHost,
                     hostControls = state.hostControls,
-                    onEditControl = vm::editHostControl,
-                    onApplyControls = vm::applyHostControls,
-                    onClearControls = vm::clearHostControls
+                    onOpenControls = vm::openHostControls
                 )
 
                 Tab.Attack -> AttackTab(

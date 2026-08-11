@@ -62,6 +62,7 @@ data class MainUiState(
     val spoofConfig: SpoofConfig = SpoofConfig(),
     val spoofHtml: String = WebServer.DEFAULT_PAGE,
     val hostControls: Map<String, HostControl> = emptyMap(),
+    val editHostIp: String? = null,
     val autoRestore: Boolean = true,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
@@ -440,6 +441,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCapture() = capture.clear()
 
     // ---- Per-host traffic controls (bandwidth / latency / loss / block / proxy) ----
+
+    fun openHostControls(ip: String) = _state.update { it.copy(editHostIp = ip) }
+    fun closeHostControls() = _state.update { it.copy(editHostIp = null) }
 
     fun editHostControl(ip: String, edit: (HostControl) -> HostControl) {
         _state.update { st ->

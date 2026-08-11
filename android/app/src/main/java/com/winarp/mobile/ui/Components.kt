@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WifiFind
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +30,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -333,7 +336,13 @@ fun MiniMetric(title: String, value: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun HostRow(host: HostInfo, selected: Boolean, onToggle: () -> Unit) {
+fun HostRow(
+    host: HostInfo,
+    selected: Boolean,
+    onToggle: () -> Unit,
+    activeControl: Boolean = false,
+    onOpenControls: (() -> Unit)? = null
+) {
     val border = if (selected) Accent else Stroke
     val bg = if (selected) Accent.copy(alpha = 0.12f) else NightCard
     Card(
@@ -345,7 +354,7 @@ fun HostRow(host: HostInfo, selected: Boolean, onToggle: () -> Unit) {
             .clickable { onToggle() }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -366,8 +375,28 @@ fun HostRow(host: HostInfo, selected: Boolean, onToggle: () -> Unit) {
                 color = if (host.name != "-" && host.name.isNotBlank()) Mint else TextSecondary,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 120.dp)
             )
+            if (onOpenControls != null) {
+                IconButton(onClick = onOpenControls) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Icon(
+                            Icons.Outlined.Speed,
+                            contentDescription = "Traffic limits",
+                            tint = if (activeControl) Warning else TextSecondary
+                        )
+                        if (activeControl) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Warning)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
