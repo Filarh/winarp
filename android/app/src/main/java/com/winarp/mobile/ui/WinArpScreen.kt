@@ -101,6 +101,8 @@ fun WinArpScreen(
     onTo: (String) -> Unit,
     onResolveName: (Boolean) -> Unit,
     onOneWay: (Boolean) -> Unit,
+    onToggleMitm: (Boolean) -> Unit,
+    onToggleCapture: () -> Unit,
     onScan: () -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onToggleHost: (String) -> Unit,
@@ -256,6 +258,12 @@ fun WinArpScreen(
                             label = { Text("One-way poison only") },
                             colors = chipColors()
                         )
+                        FilterChip(
+                            selected = state.forwardMitm,
+                            onClick = { onToggleMitm(!state.forwardMitm) },
+                            label = { Text("Keep online (MITM)") },
+                            colors = chipColors()
+                        )
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -347,6 +355,19 @@ fun WinArpScreen(
                         Icon(Icons.Outlined.StopCircle, null)
                         Spacer(Modifier.width(6.dp))
                         Text("Stop & restore")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = onToggleCapture,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.capturing) Danger else Mint
+                        )
+                    ) {
+                        Icon(Icons.Outlined.WifiFind, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (state.capturing) "Stop live traffic" else "Live traffic (sniff)")
                     }
                 }
             }

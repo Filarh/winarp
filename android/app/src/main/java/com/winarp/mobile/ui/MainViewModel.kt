@@ -12,11 +12,16 @@ import com.winarp.mobile.net.LanScanner
 import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.RootHelper
+import com.winarp.mobile.net.RootNet
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,6 +40,8 @@ data class MainUiState(
     val toIp: String = "",
     val resolveName: Boolean = true,
     val oneWay: Boolean = false,
+    val forwardMitm: Boolean = false,
+    val capturing: Boolean = false,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -56,6 +63,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+    private var captureProcess: Process? = null
+    private var captureJob: Job? = null
 
     init {
         appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
@@ -133,6 +143,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateToIp(v: String) = _state.update { it.copy(toIp = v.trim()) }
     fun updateResolveName(v: Boolean) = _state.update { it.copy(resolveName = v) }
     fun updateOneWay(v: Boolean) = _state.update { it.copy(oneWay = v) }
+    fun updateForwardMitm(v: Boolean) = _state.update { it.copy(forwardMitm = v) }
 
     fun toggleHost(ip: String) {
         _state.update { st ->
@@ -285,6 +296,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     gatewayMac = gwMac,
                     intervalMs = interval,
                     oneWay = st.oneWay,
+                    mitm = st.forwardMitm,
                     log = { appendLog(it) },
                     onStopped = {
                         _state.update { cur ->
@@ -321,8 +333,71 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return repo.readProcArp()[gateway]?.takeIf { !IpUtils.isZeroMac(it) }
     }
 
+    /** Toggle a live tcpdump on the selected NIC, streamed into the log. */
+    fun toggleCapture() {
+        if (_state.value.capturing) {
+            stopCapture()
+            return
+        }
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val host = firstTargetIp()
+        val proc = RootNet.spawnCapture(iface.name, host)
+        if (proc == null) {
+            appendLog("[-] tcpdump unavailable (need root / /system/bin/tcpdump)")
+            return
+        }
+        captureProcess = proc
+        _state.update { it.copy(capturing = true) }
+        appendLog("[*] sniff on ${iface.name} ${host?.let { h -> "host=$h" } ?: "(all hosts)"}")
+        captureJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.isNotBlank()) appendLog(line.take(220))
+                }
+            } catch (_: Throwable) {
+                // process killed / stream closed
+            } finally {
+                _state.update { it.copy(capturing = false) }
+            }
+        }
+    }
+
+    private fun stopCapture() {
+        try {
+            captureProcess?.destroyForcibly()
+        } catch (_: Throwable) {
+        }
+        captureProcess = null
+        captureJob?.cancel()
+        captureJob = null
+        _state.update { it.copy(capturing = false) }
+        appendLog("[*] sniff stopped")
+    }
+
+    /** Pick a single host to filter the sniff/attack: explicit From, else target spec, else a selected host. */
+    private fun firstTargetIp(): String? {
+        val st = _state.value
+        val candidate = st.fromIp.ifBlank {
+            st.targetSpec.split(',', ' ', '-', '\n', '\t', ';').firstOrNull { IpUtils.isValidIpv4(it.trim()) }?.trim()
+                ?: st.selectedHostIps.firstOrNull().orEmpty()
+        }
+        return candidate.takeIf { IpUtils.isValidIpv4(it) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopCapture()
+    }
+
     private fun appendLog(line: String) {
-        val stamped = "${timeFmt.format(Date())}  $line"
+        val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
+        val stamped = "$ts  $line"
         _state.update { st ->
             val next = (st.logs + stamped).let { if (it.size > 500) it.takeLast(500) else it }
             st.copy(logs = next)

@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
                         onTo = vm::updateToIp,
                         onResolveName = vm::updateResolveName,
                         onOneWay = vm::updateOneWay,
+                        onToggleMitm = vm::updateForwardMitm,
+                        onToggleCapture = vm::toggleCapture,
                         onScan = vm::scan,
                         onSelectAll = vm::selectAllHosts,
                         onToggleHost = vm::toggleHost,
