@@ -19,10 +19,17 @@ import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.RootHelper
 import com.winarp.mobile.net.RootNet
 import com.winarp.mobile.net.WebServer
+import com.winarp.mobile.store.FileLogger
+import com.winarp.mobile.store.Prefs
+import com.winarp.mobile.store.Settings
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -84,10 +91,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val spoofDir = File(getApplication<Application>().filesDir, "spoofsite")
     private val singleFile = File(getApplication<Application>().filesDir, "spoof_single.html")
 
+    private val prefs = Prefs(app)
+    private val fileLog = FileLogger(app)
+
     init {
+        // restore sticky settings from previous runs
+        val s = prefs.load()
+        _state.update {
+            it.copy(
+                workers = s.workers, intervalMs = s.intervalMs,
+                resolveName = s.resolveName, oneWay = s.oneWay, forwardMitm = s.forwardMitm,
+                cidr = s.cidr, gateway = s.gateway, targetSpec = s.targetSpec, fromIp = s.fromIp, toIp = s.toIp,
+                spoofHtml = s.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE },
+                spoofConfig = it.spoofConfig.copy(
+                    mode = runCatching { SpoofMode.valueOf(s.spoofModeName) }.getOrDefault(SpoofMode.SINGLE_PAGE),
+                    redirectUrl = s.redirectUrl, targetHosts = s.targetHosts,
+                    spaFallback = s.spaFallback, assistCaptivePortal = s.assistCaptivePortal
+                )
+            )
+        }
+        // auto-persist sticky settings on change (distinctUntilChanged ignores log/scan churn)
+        state.map { it.toSettings() }.distinctUntilChanged().onEach { prefs.save(it) }.launchIn(viewModelScope)
+
         appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
         appendLog("Tip: scanning works without root; disruption attack needs Root + AF_PACKET")
         appendLog("For CTF / authorized sandbox only")
+        appendLog("[i] logs -> ${fileLog.path()}")
         if (!NativeArp.loaded) {
             appendLog("[!] native library failed to load: ${NativeArp.loadError}")
         } else {
@@ -484,9 +513,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         web.stop()
     }
 
+    private fun MainUiState.toSettings() = Settings(
+        workers = workers,
+        intervalMs = intervalMs,
+        resolveName = resolveName,
+        oneWay = oneWay,
+        forwardMitm = forwardMitm,
+        cidr = cidr,
+        gateway = gateway,
+        targetSpec = targetSpec,
+        fromIp = fromIp,
+        toIp = toIp,
+        spoofModeName = spoofConfig.mode.name,
+        redirectUrl = spoofConfig.redirectUrl,
+        targetHosts = spoofConfig.targetHosts,
+        spaFallback = spoofConfig.spaFallback,
+        assistCaptivePortal = spoofConfig.assistCaptivePortal,
+        spoofHtml = spoofHtml
+    )
+
     private fun appendLog(line: String) {
         val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
         val stamped = "$ts  $line"
+        fileLog.append(stamped)
         _state.update { st ->
             val next = (st.logs + stamped).let { if (it.size > 500) it.takeLast(500) else it }
             st.copy(logs = next)
