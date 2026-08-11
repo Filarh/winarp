@@ -9,7 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WifiFind
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +41,17 @@ import com.winarp.mobile.ui.theme.TextSecondary
 @Composable
 fun WinArpRoot(vm: MainViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    if (state.showSettings) {
+        SettingsScreen(
+            ifaceLabel = state.selectedIface?.toString() ?: "No NIC selected",
+            logPath = vm.logFilePath(),
+            onBack = vm::closeSettings,
+            onRefreshIfaces = vm::refreshIfaces,
+            onClearLogs = vm::clearLogs,
+            onRestoreNetwork = vm::restoreNetwork
+        )
+        return
+    }
     Scaffold(
         containerColor = NightBg,
         topBar = {
@@ -53,8 +64,8 @@ fun WinArpRoot(vm: MainViewModel) {
                 },
                 actions = {
                     RootBadge(state.rootState)
-                    IconButton(onClick = vm::refreshIfaces) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = Color.White)
+                    IconButton(onClick = vm::openSettings) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

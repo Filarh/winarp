@@ -56,6 +56,7 @@ data class MainUiState(
     val oneWay: Boolean = false,
     val forwardMitm: Boolean = true,
     val tab: Tab = Tab.Scan,
+    val showSettings: Boolean = false,
     val showRaw: Boolean = false,
     val forcePlaintext: Boolean = false,
     val spoofConfig: SpoofConfig = SpoofConfig(),
@@ -386,8 +387,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectTab(t: Tab) = _state.update { it.copy(tab = t) }
+    fun openSettings() = _state.update { it.copy(showSettings = true) }
+    fun closeSettings() = _state.update { it.copy(showSettings = false) }
 
     fun logFilePath(): String = fileLog.path()
+
+    /** Undo every root-level network change we may have made (professional 'panic'/reset). */
+    fun restoreNetwork() {
+        val iface = _state.value.selectedIface
+        capture.stop()
+        web.stop()
+        _state.update { it.copy(hostControls = emptyMap(), forcePlaintext = false, showRaw = false) }
+        if (iface != null) {
+            viewModelScope.launch {
+                RootNet.clearControls(iface.name)
+                RootNet.forcePlaintext(iface.name, false)
+                RootNet.disableHttpRedirect(iface.name, _state.value.spoofConfig.port)
+                RootNet.disableForwarding(iface.name)
+            }
+        }
+        appendLog("[+] network restored — all root changes reverted")
+    }
 
     /** Block DoT (853) + QUIC (UDP/443) so victims fall back to cleartext DNS/TLS (domains appear). */
     fun toggleForcePlaintext() {
@@ -434,6 +454,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val map = _state.value.hostControls
+        // proxy needs the local server up — start it automatically
+        if (map.values.any { it.proxied }) {
+            val e = ensureWebServer()
+            if (e == null) appendLog("[+] local proxy server ready on :${_state.value.spoofConfig.port}")
+            else appendLog("[!] proxy server: $e")
+        }
         viewModelScope.launch {
             val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port)
             if (err == null) appendLog("[+] traffic controls applied to ${map.size} host(s)")
@@ -475,12 +501,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (web.running.value) stopSpoof() else startSpoof()
     }
 
-    private fun startSpoof() {
-        val iface = _state.value.selectedIface
-        if (iface == null) {
-            appendLog("[-] no NIC selected")
-            return
-        }
+    /** Start the local web server (writing the seed page) if it isn't running. Returns error/null. */
+    private fun ensureWebServer(): String? {
+        if (web.running.value) return null
         val st = _state.value
         try {
             singleFile.writeText(st.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE })
@@ -490,15 +513,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (t: Throwable) {
             appendLog("[!] spoof storage: ${t.message}")
         }
-        val err = web.start(st.spoofConfig, spoofDir, singleFile)
+        return web.start(st.spoofConfig, spoofDir, singleFile)
+    }
+
+    private fun startSpoof() {
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val err = ensureWebServer()
         if (err != null) {
             appendLog("[!] spoof server: $err")
             return
         }
+        val port = _state.value.spoofConfig.port
         viewModelScope.launch {
-            val re = RootNet.enableHttpRedirect(iface.name, st.spoofConfig.port)
+            val re = RootNet.enableHttpRedirect(iface.name, port)
             if (re == null) {
-                appendLog("[+] spoof ON — HTTP :80 -> :${st.spoofConfig.port} (poison targets with MITM to feed it)")
+                appendLog("[+] spoof ON — HTTP :80 -> :$port (poison targets with MITM to feed it)")
             } else {
                 appendLog("[!] http redirect: $re")
             }
