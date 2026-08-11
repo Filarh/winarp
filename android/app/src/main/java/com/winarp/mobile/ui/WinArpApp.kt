@@ -81,7 +81,11 @@ fun WinArpRoot(vm: MainViewModel) {
                     onResolveName = vm::updateResolveName,
                     onScan = vm::scan,
                     onSelectAll = vm::selectAllHosts,
-                    onToggleHost = vm::toggleHost
+                    onToggleHost = vm::toggleHost,
+                    hostControls = state.hostControls,
+                    onEditControl = vm::editHostControl,
+                    onApplyControls = vm::applyHostControls,
+                    onClearControls = vm::clearHostControls
                 )
 
                 Tab.Attack -> AttackTab(

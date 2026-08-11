@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.winarp.mobile.data.Tab
 import com.winarp.mobile.data.CapturePeer
+import com.winarp.mobile.data.HostControl
 import com.winarp.mobile.data.HostInfo
 import com.winarp.mobile.data.IfaceInfo
 import com.winarp.mobile.data.RootState
@@ -59,6 +60,7 @@ data class MainUiState(
     val forcePlaintext: Boolean = false,
     val spoofConfig: SpoofConfig = SpoofConfig(),
     val spoofHtml: String = WebServer.DEFAULT_PAGE,
+    val hostControls: Map<String, HostControl> = emptyMap(),
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -413,6 +415,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearCapture() = capture.clear()
+
+    // ---- Per-host traffic controls (bandwidth / latency / loss / block / proxy) ----
+
+    fun editHostControl(ip: String, edit: (HostControl) -> HostControl) {
+        _state.update { st ->
+            val next = edit(st.hostControls[ip] ?: HostControl())
+            val map = st.hostControls.toMutableMap()
+            if (next.active) map[ip] = next else map.remove(ip)
+            st.copy(hostControls = map)
+        }
+    }
+
+    fun applyHostControls() {
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val map = _state.value.hostControls
+        viewModelScope.launch {
+            val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port)
+            if (err == null) appendLog("[+] traffic controls applied to ${map.size} host(s)")
+            else appendLog("[!] traffic controls: $err")
+        }
+    }
+
+    fun clearHostControls() {
+        val iface = _state.value.selectedIface
+        _state.update { it.copy(hostControls = emptyMap()) }
+        if (iface != null) {
+            viewModelScope.launch {
+                RootNet.clearControls(iface.name)
+                appendLog("[+] traffic controls cleared")
+            }
+        }
+    }
 
     /** Raw packet feed is opt-in: not collected/rendered until the user asks for it. */
     fun toggleRaw() {

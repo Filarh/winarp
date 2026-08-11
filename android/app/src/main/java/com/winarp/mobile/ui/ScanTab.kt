@@ -44,7 +44,11 @@ fun ScanTab(
     onResolveName: (Boolean) -> Unit,
     onScan: () -> Unit,
     onSelectAll: (Boolean) -> Unit,
-    onToggleHost: (String) -> Unit
+    onToggleHost: (String) -> Unit,
+    hostControls: Map<String, com.winarp.mobile.data.HostControl>,
+    onEditControl: (String, (com.winarp.mobile.data.HostControl) -> com.winarp.mobile.data.HostControl) -> Unit,
+    onApplyControls: () -> Unit,
+    onClearControls: () -> Unit
 ) {
     val fieldColors = winArpFieldColors()
     LazyColumn(
@@ -140,18 +144,37 @@ fun ScanTab(
             }
         }
         item {
-            Text(
-                "Devices · ${state.hosts.size}",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
-            )
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    "Devices · ${state.hosts.size}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = 4.dp, start = 4.dp)
+                )
+                if (hostControls.isNotEmpty()) {
+                    Button(
+                        onClick = onApplyControls,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) { Text("Apply limits") }
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedButton(onClick = onClearControls, shape = RoundedCornerShape(12.dp)) { Text("Clear") }
+                }
+            }
         }
         if (state.hosts.isEmpty()) {
             item { EmptyHosts() }
         } else {
             items(state.hosts, key = { it.ip }) { host ->
-                HostRow(host = host, selected = host.ip in state.selectedHostIps, onToggle = { onToggleHost(host.ip) })
+                DeviceItem(
+                    host = host,
+                    selected = host.ip in state.selectedHostIps,
+                    control = hostControls[host.ip] ?: com.winarp.mobile.data.HostControl(),
+                    onToggleSelect = { onToggleHost(host.ip) },
+                    onEdit = onEditControl
+                )
             }
         }
     }

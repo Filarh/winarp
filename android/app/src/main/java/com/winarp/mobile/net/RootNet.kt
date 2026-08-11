@@ -43,6 +43,62 @@ object RootNet {
         RootHelper.execSu(script)
     }
 
+    /**
+     * Declaratively apply per-host traffic controls (bandwidth cap + latency/loss via tc, block +
+     * :80 proxy via iptables). Full rebuild each call so state can't drift. All forwarded victim
+     * traffic egresses [ifName] (victim and router share it), so both directions are shaped there
+     * by matching dst=host (download) and src=host (upload) — no ingress/ifb needed. null = ok.
+     */
+    suspend fun applyControls(
+        ifName: String,
+        controls: Map<String, com.winarp.mobile.data.HostControl>,
+        proxyPort: Int
+    ): String? = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        sb.append("tc qdisc del dev $ifName root 2>/dev/null; ")
+        sb.append("iptables -F WINARP_CTL 2>/dev/null; iptables -t nat -F WINARP_NAT 2>/dev/null; ")
+        sb.append("iptables -N WINARP_CTL 2>/dev/null; iptables -C FORWARD -j WINARP_CTL 2>/dev/null || iptables -I FORWARD 1 -j WINARP_CTL; ")
+        sb.append("iptables -t nat -N WINARP_NAT 2>/dev/null; iptables -t nat -C PREROUTING -j WINARP_NAT 2>/dev/null || iptables -t nat -I PREROUTING 1 -j WINARP_NAT; ")
+
+        val active = controls.filterValues { it.active }
+        val shaped = active.filterValues { it.shaped }
+        if (shaped.isNotEmpty()) {
+            sb.append("tc qdisc add dev $ifName root handle 1: htb default 999; ")
+            sb.append("tc class add dev $ifName parent 1: classid 1:999 htb rate 1000mbit; ")
+            for ((ip, c) in shaped) {
+                val oct = ip.substringAfterLast('.').toIntOrNull() ?: continue
+                val rate = if (c.kbps > 0) c.kbps else 1000000
+                val netem = if (c.delayMs > 0 || c.lossPct > 0) "delay ${c.delayMs}ms loss ${c.lossPct}%" else ""
+                for ((cid, dir) in listOf((100 + oct) to "dst", (500 + oct) to "src")) {
+                    sb.append("tc class add dev $ifName parent 1: classid 1:$cid htb rate ${rate}kbit ceil ${rate}kbit; ")
+                    if (netem.isNotEmpty()) sb.append("tc qdisc add dev $ifName parent 1:$cid handle $cid: netem $netem; ")
+                    sb.append("tc filter add dev $ifName parent 1: protocol ip prio 1 u32 match ip $dir $ip/32 flowid 1:$cid; ")
+                }
+            }
+        }
+        for ((ip, c) in active) {
+            if (c.blocked) {
+                sb.append("iptables -A WINARP_CTL -i $ifName -s $ip -j DROP; ")
+                sb.append("iptables -A WINARP_CTL -i $ifName -d $ip -j DROP; ")
+            }
+            if (c.proxied) {
+                sb.append("iptables -t nat -A WINARP_NAT -i $ifName -s $ip -p tcp --dport 80 -j REDIRECT --to-ports $proxyPort; ")
+            }
+        }
+        sb.append("echo DONE")
+        val (code, out) = RootHelper.execSu(sb.toString())
+        if (out.contains("DONE") && code == 0) null else out.trim().ifBlank { "controls failed (code=$code)" }
+    }
+
+    /** Remove all per-host controls (tc + iptables chains). */
+    suspend fun clearControls(ifName: String) {
+        RootHelper.execSu(
+            "tc qdisc del dev $ifName root 2>/dev/null; " +
+                "iptables -F WINARP_CTL 2>/dev/null; iptables -D FORWARD -j WINARP_CTL 2>/dev/null; iptables -X WINARP_CTL 2>/dev/null; " +
+                "iptables -t nat -F WINARP_NAT 2>/dev/null; iptables -t nat -D PREROUTING -j WINARP_NAT 2>/dev/null; iptables -t nat -X WINARP_NAT 2>/dev/null; echo DONE"
+        )
+    }
+
     /** Transparently REDIRECT forwarded victim HTTP (:80) into the local page server on [port]. */
     suspend fun enableHttpRedirect(ifName: String, port: Int): String? = withContext(Dispatchers.IO) {
         val script =
