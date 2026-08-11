@@ -18,7 +18,7 @@ import java.util.Locale
  * Interface / ARP discovery.
  *
  * On Android 11+ (and hardened AOSP ROMs) the app process is denied the reads a LAN/ARP tool
- * needs: `NetworkInterface.getHardwareAddress()` returns null, `/sys/class/net/*/address` and
+ * needs: `NetworkInterface.getHardwareAddress()` returns null, sysfs net entries and
  * `/proc/net/arp` are unreadable, and AF_PACKET is blocked. This class therefore prefers the
  * already-present root channel (`su`) for enumeration, MAC, gateway and the neighbor table,
  * and only falls back to the sandboxed Java APIs when root is unavailable.
