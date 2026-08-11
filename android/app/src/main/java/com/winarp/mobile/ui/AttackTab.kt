@@ -107,26 +107,31 @@ fun AttackTab(
                     colors = chipColors()
                 )
                 Spacer(Modifier.height(12.dp))
+                val selReason = Gate.attackSelected(state)
+                val rangeReason = Gate.attackRange(state)
+                val stopReason = Gate.stop(state)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onAttackSelected,
-                        enabled = !state.scanning && !state.attacking && state.selectedHostIps.isNotEmpty(),
+                        enabled = selReason == null,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Danger)
                     ) { Text("Attack selected") }
                     Button(
                         onClick = onAttackRange,
-                        enabled = !state.scanning && !state.attacking,
+                        enabled = rangeReason == null,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0673D))
                     ) { Text("Attack IP range") }
                 }
+                WhyDisabled("Attack selected", selReason)
+                WhyDisabled("Attack IP range", rangeReason)
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = onStop,
-                    enabled = state.attacking,
+                    enabled = stopReason == null,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -134,6 +139,7 @@ fun AttackTab(
                     Spacer(Modifier.width(6.dp))
                     Text("Stop & restore")
                 }
+                WhyDisabled("Stop & restore", stopReason)
             }
         }
         item {

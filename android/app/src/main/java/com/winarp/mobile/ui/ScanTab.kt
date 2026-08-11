@@ -112,10 +112,12 @@ fun ScanTab(
                     colors = chipColors()
                 )
                 Spacer(Modifier.height(12.dp))
+                val scanReason = Gate.scan(state)
+                val selectAllReason = Gate.selectAll(state)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = onScan,
-                        enabled = !state.scanning && !state.attacking,
+                        enabled = scanReason == null,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Accent)
@@ -128,11 +130,13 @@ fun ScanTab(
                     }
                     OutlinedButton(
                         onClick = { onSelectAll(true) },
-                        enabled = state.hosts.isNotEmpty(),
+                        enabled = selectAllReason == null,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
                     ) { Text("Select all") }
                 }
+                WhyDisabled("Scan LAN", scanReason)
+                WhyDisabled("Select all", selectAllReason)
             }
         }
         item {

@@ -298,6 +298,18 @@ fun MitmControl(on: Boolean, onToggle: (Boolean) -> Unit) {
     }
 }
 
+/** Inline explanation shown under a disabled control so nothing is ever blocked without a why. */
+@Composable
+fun WhyDisabled(label: String, reason: String?) {
+    if (reason == null) return
+    Text(
+        "ⓘ $label unavailable — $reason",
+        color = Warning,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+    )
+}
+
 @Composable
 fun MiniMetric(title: String, value: String, modifier: Modifier = Modifier) {
     Column(
