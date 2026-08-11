@@ -45,10 +45,14 @@ fun WinArpRoot(vm: MainViewModel) {
         SettingsScreen(
             ifaceLabel = state.selectedIface?.toString() ?: "No NIC selected",
             logPath = vm.logFilePath(),
+            proxyPort = state.spoofConfig.port,
+            autoRestore = state.autoRestore,
             onBack = vm::closeSettings,
             onRefreshIfaces = vm::refreshIfaces,
             onClearLogs = vm::clearLogs,
-            onRestoreNetwork = vm::restoreNetwork
+            onRestoreNetwork = vm::restoreNetwork,
+            onProxyPort = vm::updateSpoofPort,
+            onToggleAutoRestore = vm::toggleAutoRestore
         )
         return
     }

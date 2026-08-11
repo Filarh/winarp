@@ -62,6 +62,7 @@ data class MainUiState(
     val spoofConfig: SpoofConfig = SpoofConfig(),
     val spoofHtml: String = WebServer.DEFAULT_PAGE,
     val hostControls: Map<String, HostControl> = emptyMap(),
+    val autoRestore: Boolean = true,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -109,10 +110,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 resolveName = s.resolveName, oneWay = s.oneWay, forwardMitm = s.forwardMitm,
                 cidr = s.cidr, gateway = s.gateway, targetSpec = s.targetSpec, fromIp = s.fromIp, toIp = s.toIp,
                 spoofHtml = s.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE },
+                autoRestore = s.autoRestore,
                 spoofConfig = it.spoofConfig.copy(
                     mode = runCatching { SpoofMode.valueOf(s.spoofModeName) }.getOrDefault(SpoofMode.SINGLE_PAGE),
                     redirectUrl = s.redirectUrl, targetHosts = s.targetHosts,
-                    spaFallback = s.spaFallback, assistCaptivePortal = s.assistCaptivePortal
+                    spaFallback = s.spaFallback, assistCaptivePortal = s.assistCaptivePortal,
+                    port = s.spoofPort.coerceIn(1024, 65535)
                 )
             )
         }
@@ -487,6 +490,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Page spoofing (configurable web server + :80 REDIRECT) ----
 
+    fun updateSpoofPort(v: Int) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(port = v.coerceIn(1024, 65535))) }
+    fun toggleAutoRestore() = _state.update { it.copy(autoRestore = !it.autoRestore) }
     fun updateSpoofMode(m: SpoofMode) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(mode = m)) }
     fun updateRedirectUrl(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(redirectUrl = v.trim())) }
     fun updateTargetHosts(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(targetHosts = v)) }
@@ -560,6 +565,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
         capture.stop()
         web.stop()
+        if (_state.value.autoRestore) {
+            _state.value.selectedIface?.let { RootNet.revertAllDetached(it.name, _state.value.spoofConfig.port) }
+        }
     }
 
     private fun MainUiState.toSettings() = Settings(
@@ -578,7 +586,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         targetHosts = spoofConfig.targetHosts,
         spaFallback = spoofConfig.spaFallback,
         assistCaptivePortal = spoofConfig.assistCaptivePortal,
-        spoofHtml = spoofHtml
+        spoofHtml = spoofHtml,
+        spoofPort = spoofConfig.port,
+        autoRestore = autoRestore
     )
 
     private fun appendLog(line: String) {

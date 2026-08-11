@@ -20,7 +20,9 @@ data class Settings(
     val targetHosts: String = "",
     val spaFallback: Boolean = true,
     val assistCaptivePortal: Boolean = true,
-    val spoofHtml: String = ""
+    val spoofHtml: String = "",
+    val spoofPort: Int = 8080,
+    val autoRestore: Boolean = true
 )
 
 /** SharedPreferences-backed settings store. Cheap async writes (apply); safe to call often. */
@@ -43,7 +45,9 @@ class Prefs(context: Context) {
         targetHosts = sp.getString("targetHosts", "") ?: "",
         spaFallback = sp.getBoolean("spaFallback", true),
         assistCaptivePortal = sp.getBoolean("assistCaptivePortal", true),
-        spoofHtml = sp.getString("spoofHtml", "") ?: ""
+        spoofHtml = sp.getString("spoofHtml", "") ?: "",
+        spoofPort = sp.getInt("spoofPort", 8080),
+        autoRestore = sp.getBoolean("autoRestore", true)
     )
 
     fun save(s: Settings) {
@@ -64,6 +68,8 @@ class Prefs(context: Context) {
             .putBoolean("spaFallback", s.spaFallback)
             .putBoolean("assistCaptivePortal", s.assistCaptivePortal)
             .putString("spoofHtml", s.spoofHtml)
+            .putInt("spoofPort", s.spoofPort)
+            .putBoolean("autoRestore", s.autoRestore)
             .apply()
     }
 }

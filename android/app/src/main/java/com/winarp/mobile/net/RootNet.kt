@@ -90,6 +90,30 @@ object RootNet {
         if (out.contains("DONE") && code == 0) null else out.trim().ifBlank { "controls failed (code=$code)" }
     }
 
+    /**
+     * Fire-and-forget revert of EVERY root change (tc, our iptables chains, forwarding, redirects,
+     * DoT/QUIC blocks). Detached so it still runs while the app process is being destroyed
+     * (auto-restore on close). Not suspend on purpose.
+     */
+    fun revertAllDetached(ifName: String, port: Int) {
+        val script = buildString {
+            append("tc qdisc del dev $ifName root 2>/dev/null; ")
+            append("iptables -F WINARP_CTL 2>/dev/null; iptables -D FORWARD -j WINARP_CTL 2>/dev/null; iptables -X WINARP_CTL 2>/dev/null; ")
+            append("iptables -t nat -F WINARP_NAT 2>/dev/null; iptables -t nat -D PREROUTING -j WINARP_NAT 2>/dev/null; iptables -t nat -X WINARP_NAT 2>/dev/null; ")
+            append("iptables -D FORWARD -i $ifName -o $ifName -j ACCEPT 2>/dev/null; ")
+            append("ip rule del iif $ifName lookup $ifName priority 9000 2>/dev/null; ")
+            append("iptables -t nat -D PREROUTING -i $ifName -p tcp --dport 80 -j REDIRECT --to-ports $port 2>/dev/null; ")
+            append("iptables -D FORWARD -i $ifName -p udp --dport 443 -j REJECT 2>/dev/null; ")
+            append("iptables -D FORWARD -i $ifName -p udp --dport 853 -j REJECT 2>/dev/null; ")
+            append("iptables -D FORWARD -i $ifName -p tcp --dport 853 -j REJECT 2>/dev/null; ")
+            append("echo 0 > /proc/sys/net/ipv4/ip_forward 2>/dev/null")
+        }
+        try {
+            ProcessBuilder("su", "-c", script).start()
+        } catch (_: Throwable) {
+        }
+    }
+
     /** Remove all per-host controls (tc + iptables chains). */
     suspend fun clearControls(ifName: String) {
         RootHelper.execSu(

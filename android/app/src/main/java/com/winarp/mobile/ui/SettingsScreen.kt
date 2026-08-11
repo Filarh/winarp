@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Article
@@ -20,9 +21,11 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.winarp.mobile.ui.theme.Accent
@@ -48,10 +52,14 @@ import java.io.File
 fun SettingsScreen(
     ifaceLabel: String,
     logPath: String,
+    proxyPort: Int,
+    autoRestore: Boolean,
     onBack: () -> Unit,
     onRefreshIfaces: () -> Unit,
     onClearLogs: () -> Unit,
-    onRestoreNetwork: () -> Unit
+    onRestoreNetwork: () -> Unit,
+    onProxyPort: (Int) -> Unit,
+    onToggleAutoRestore: () -> Unit
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -115,6 +123,32 @@ fun SettingsScreen(
                     ) { Text("Export log") }
                     OutlinedButton(onClick = onClearLogs, shape = RoundedCornerShape(12.dp)) { Text("Clear log") }
                 }
+            }
+
+            SectionCard(title = "Proxy / server", icon = { Icon(Icons.Outlined.DeviceHub, null, tint = Accent) }) {
+                OutlinedTextField(
+                    value = if (proxyPort == 0) "" else proxyPort.toString(),
+                    onValueChange = { s -> onProxyPort(s.filter { it.isDigit() }.take(5).toIntOrNull() ?: 8080) },
+                    label = { Text("Local proxy / page-server port") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = winArpFieldColors(),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                FilterChip(
+                    selected = autoRestore,
+                    onClick = onToggleAutoRestore,
+                    label = { Text("Auto-restore network when app closes") },
+                    colors = chipColors()
+                )
+                Text(
+                    "When on, closing the app reverts all root network changes automatically.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             SectionCard(title = "Restore / safety", icon = { Icon(Icons.Outlined.ClearAll, null, tint = Danger) }) {
