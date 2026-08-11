@@ -3,7 +3,7 @@ package com.winarp.mobile.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.winarp.mobile.data.AppScreen
+import com.winarp.mobile.data.Tab
 import com.winarp.mobile.data.CapturePeer
 import com.winarp.mobile.data.HostInfo
 import com.winarp.mobile.data.IfaceInfo
@@ -51,7 +51,7 @@ data class MainUiState(
     val resolveName: Boolean = true,
     val oneWay: Boolean = false,
     val forwardMitm: Boolean = false,
-    val screen: AppScreen = AppScreen.Main,
+    val tab: Tab = Tab.Scan,
     val showRaw: Boolean = false,
     val forcePlaintext: Boolean = false,
     val spoofConfig: SpoofConfig = SpoofConfig(),
@@ -379,28 +379,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return repo.readProcArp()[gateway]?.takeIf { !IpUtils.isZeroMac(it) }
     }
 
-    /** Open the dedicated traffic screen and start capturing the current target. */
-    fun openSniffer() {
-        val iface = _state.value.selectedIface
-        if (iface == null) {
-            appendLog("[-] no NIC selected")
-            return
-        }
-        _state.update { it.copy(screen = AppScreen.Sniffer) }
-        if (!capture.running.value) {
-            capture.start(viewModelScope, iface.name, iface.ip, iface.prefixLength)
-        }
-    }
+    fun selectTab(t: Tab) = _state.update { it.copy(tab = t) }
 
-    fun closeSniffer() {
-        capture.setRawEnabled(false)
-        if (_state.value.forcePlaintext) {
-            _state.value.selectedIface?.let { iface ->
-                viewModelScope.launch { RootNet.forcePlaintext(iface.name, false) }
-            }
-        }
-        _state.update { it.copy(screen = AppScreen.Main, showRaw = false, forcePlaintext = false) }
-    }
+    fun logFilePath(): String = fileLog.path()
 
     /** Block DoT (853) + QUIC (UDP/443) so victims fall back to cleartext DNS/TLS (domains appear). */
     fun toggleForcePlaintext() {
@@ -437,13 +418,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- Page spoofing (configurable web server + :80 REDIRECT) ----
-
-    fun openSpoof() = _state.update { it.copy(screen = AppScreen.Spoof) }
-
-    fun closeSpoof() {
-        if (web.running.value) stopSpoof()
-        _state.update { it.copy(screen = AppScreen.Main) }
-    }
 
     fun updateSpoofMode(m: SpoofMode) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(mode = m)) }
     fun updateRedirectUrl(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(redirectUrl = v.trim())) }

@@ -18,13 +18,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,127 +41,90 @@ import com.winarp.mobile.data.CapturePeer
 import com.winarp.mobile.ui.theme.Accent
 import com.winarp.mobile.ui.theme.Danger
 import com.winarp.mobile.ui.theme.Mint
-import com.winarp.mobile.ui.theme.NightBg
 import com.winarp.mobile.ui.theme.NightCard
-import com.winarp.mobile.ui.theme.NightCardAlt
 import com.winarp.mobile.ui.theme.Stroke
 import com.winarp.mobile.ui.theme.TextSecondary
 import com.winarp.mobile.ui.theme.Warning
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SnifferScreen(
+fun SniffTab(
     target: String?,
     running: Boolean,
     peers: List<CapturePeer>,
     raw: List<String>,
     showRaw: Boolean,
     forcePlaintext: Boolean,
-    onBack: () -> Unit,
     onToggleCapture: () -> Unit,
     onClear: () -> Unit,
     onToggleRaw: () -> Unit,
     onToggleForcePlaintext: () -> Unit
 ) {
-    Scaffold(
-        containerColor = NightBg,
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("‹ Back", color = Accent) }
-                },
-                title = {
-                    Column {
-                        Text("Traffic", fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(
-                            (target?.let { "target $it" } ?: "all hosts") +
-                                if (running) "  ·  live" else "  ·  stopped",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (running) Mint else TextSecondary
-                        )
-                    }
-                },
-                actions = {
-                    TextButton(onClick = onToggleCapture) {
-                        Text(if (running) "Stop" else "Start", color = if (running) Danger else Mint)
-                    }
-                    TextButton(onClick = onClear) { Text("Clear", color = TextSecondary) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = Color.White
-                )
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onToggleCapture,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = if (running) Danger else Mint)
+            ) { Text(if (running) "Stop" else "Start") }
+            TextButton(onClick = onClear) { Text("Clear", color = TextSecondary) }
+            Spacer(Modifier.weight(1f))
+            Text(
+                (target ?: "all") + if (running) " · live" else "",
+                color = if (running) Mint else TextSecondary,
+                style = MaterialTheme.typography.labelMedium
             )
         }
-    ) { padding ->
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Grouped peers (clickable, expandable)
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = onToggleForcePlaintext) {
-                            Text(
-                                if (forcePlaintext) "✓ Force plaintext" else "Force plaintext",
-                                color = if (forcePlaintext) Mint else Accent
-                            )
-                        }
-                        Text(
-                            "block DoT/QUIC → reveal domains",
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-                item {
-                    Text(
-                        "Peers · ${peers.size}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-                    )
-                }
-                if (peers.isEmpty()) {
-                    item {
-                        Text(
-                            if (running) "Waiting for traffic… generate activity on the target."
-                            else "Stopped. Tap Start to capture.",
-                            color = TextSecondary,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                } else {
-                    items(peers, key = { it.ip }) { peer -> PeerRow(peer) }
-                }
+            TextButton(onClick = onToggleForcePlaintext) {
+                Text(if (forcePlaintext) "✓ Force plaintext" else "Force plaintext", color = if (forcePlaintext) Mint else Accent)
             }
-
-            // The noise: raw packet feed is opt-in (rendering it lags weak devices)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                TextButton(onClick = onToggleRaw) {
-                    Text(
-                        if (showRaw) "Hide raw packets" else "Show raw packets",
-                        color = Accent
-                    )
-                }
-            }
-            if (showRaw) {
-                RawPanel(raw)
+            TextButton(onClick = onToggleRaw) {
+                Text(if (showRaw) "Hide raw" else "Show raw", color = Accent)
             }
         }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Text(
+                    "Peers · ${peers.size}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                )
+            }
+            if (peers.isEmpty()) {
+                item {
+                    Text(
+                        if (running) "Waiting for traffic… generate activity on a poisoned device."
+                        else "Stopped. Tap Start to capture (needs an active MITM attack).",
+                        color = TextSecondary,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
+                items(peers, key = { it.ip }) { peer -> PeerRow(peer) }
+            }
+        }
+
+        if (showRaw) RawPanel(raw)
     }
 }
 
