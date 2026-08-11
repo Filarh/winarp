@@ -3,25 +3,23 @@ package com.winarp.mobile.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.winarp.mobile.data.AppScreen
+import com.winarp.mobile.data.CapturePeer
 import com.winarp.mobile.data.HostInfo
 import com.winarp.mobile.data.IfaceInfo
 import com.winarp.mobile.data.RootState
 import com.winarp.mobile.net.ArpPoisoner
+import com.winarp.mobile.net.CaptureEngine
 import com.winarp.mobile.net.IpUtils
 import com.winarp.mobile.net.LanScanner
 import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.RootHelper
-import com.winarp.mobile.net.RootNet
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -41,7 +39,7 @@ data class MainUiState(
     val resolveName: Boolean = true,
     val oneWay: Boolean = false,
     val forwardMitm: Boolean = false,
-    val capturing: Boolean = false,
+    val screen: AppScreen = AppScreen.Main,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
@@ -64,8 +62,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
-    private var captureProcess: Process? = null
-    private var captureJob: Job? = null
+    private val capture = CaptureEngine()
+    val capturePeers: StateFlow<List<CapturePeer>> = capture.peers
+    val captureRaw: StateFlow<List<String>> = capture.raw
+    val captureRunning: StateFlow<Boolean> = capture.running
+    val captureTarget: StateFlow<String?> = capture.target
 
     init {
         appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
@@ -333,52 +334,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return repo.readProcArp()[gateway]?.takeIf { !IpUtils.isZeroMac(it) }
     }
 
-    /** Toggle a live tcpdump on the selected NIC, streamed into the log. */
-    fun toggleCapture() {
-        if (_state.value.capturing) {
-            stopCapture()
-            return
-        }
+    /** Open the dedicated traffic screen and start capturing the current target. */
+    fun openSniffer() {
         val iface = _state.value.selectedIface
         if (iface == null) {
             appendLog("[-] no NIC selected")
             return
         }
-        val host = firstTargetIp()
-        val proc = RootNet.spawnCapture(iface.name, host)
-        if (proc == null) {
-            appendLog("[-] tcpdump unavailable (need root / /system/bin/tcpdump)")
-            return
-        }
-        captureProcess = proc
-        _state.update { it.copy(capturing = true) }
-        appendLog("[*] sniff on ${iface.name} ${host?.let { h -> "host=$h" } ?: "(all hosts)"}")
-        captureJob = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val reader = BufferedReader(InputStreamReader(proc.inputStream))
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    if (line.isNotBlank()) appendLog(line.take(220))
-                }
-            } catch (_: Throwable) {
-                // process killed / stream closed
-            } finally {
-                _state.update { it.copy(capturing = false) }
-            }
+        _state.update { it.copy(screen = AppScreen.Sniffer) }
+        if (!capture.running.value) {
+            capture.start(viewModelScope, iface.name, firstTargetIp())
         }
     }
 
-    private fun stopCapture() {
-        try {
-            captureProcess?.destroyForcibly()
-        } catch (_: Throwable) {
-        }
-        captureProcess = null
-        captureJob?.cancel()
-        captureJob = null
-        _state.update { it.copy(capturing = false) }
-        appendLog("[*] sniff stopped")
+    fun closeSniffer() {
+        _state.update { it.copy(screen = AppScreen.Main) }
     }
+
+    /** Start/stop the capture from the sniffer screen. */
+    fun toggleCapture() {
+        if (capture.running.value) {
+            capture.stop()
+            return
+        }
+        val iface = _state.value.selectedIface ?: return
+        capture.start(viewModelScope, iface.name, firstTargetIp())
+    }
+
+    fun clearCapture() = capture.clear()
 
     /** Pick a single host to filter the sniff/attack: explicit From, else target spec, else a selected host. */
     private fun firstTargetIp(): String? {
@@ -392,7 +375,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         super.onCleared()
-        stopCapture()
+        capture.stop()
     }
 
     private fun appendLog(line: String) {

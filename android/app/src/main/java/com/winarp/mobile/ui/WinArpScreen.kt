@@ -102,7 +102,7 @@ fun WinArpScreen(
     onResolveName: (Boolean) -> Unit,
     onOneWay: (Boolean) -> Unit,
     onToggleMitm: (Boolean) -> Unit,
-    onToggleCapture: () -> Unit,
+    onOpenSniffer: () -> Unit,
     onScan: () -> Unit,
     onSelectAll: (Boolean) -> Unit,
     onToggleHost: (String) -> Unit,
@@ -358,16 +358,14 @@ fun WinArpScreen(
                     }
                     Spacer(Modifier.height(8.dp))
                     Button(
-                        onClick = onToggleCapture,
+                        onClick = onOpenSniffer,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (state.capturing) Danger else Mint
-                        )
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint)
                     ) {
                         Icon(Icons.Outlined.WifiFind, null)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (state.capturing) "Stop live traffic" else "Live traffic (sniff)")
+                        Text("Live traffic (sniffer)")
                     }
                 }
             }

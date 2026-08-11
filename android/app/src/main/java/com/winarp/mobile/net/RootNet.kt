@@ -50,6 +50,11 @@ object RootNet {
      */
     fun spawnCapture(ifName: String, host: String?): Process? {
         val filter = if (host.isNullOrBlank()) "not arp" else "host $host and not arp"
+        return spawnCaptureRaw(ifName, filter)
+    }
+
+    /** Launch tcpdump with an arbitrary BPF [filter]. Caller reads stdout and destroys to stop. */
+    fun spawnCaptureRaw(ifName: String, filter: String): Process? {
         val cmd = "/system/bin/tcpdump -i $ifName -n -l -q -s 0 $filter 2>&1"
         return try {
             ProcessBuilder("su", "-c", cmd)

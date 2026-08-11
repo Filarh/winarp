@@ -26,6 +26,20 @@ android {
         }
     }
 
+    signingConfigs {
+        // Fixed key committed to the repo so every CI build shares one signature.
+        // This keeps the installed package's signature (and uid) stable, so updates
+        // install with `pm install -r` without an uninstall and root grants persist.
+        // Debug-only convenience key for this CTF/testing tool — not a production secret.
+        create("stable") {
+            storeFile = file("winarp-debug.p12")
+            storePassword = "winarp123"
+            keyAlias = "winarp"
+            keyPassword = "winarp123"
+            storeType = "PKCS12"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -38,6 +52,7 @@ android {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 
