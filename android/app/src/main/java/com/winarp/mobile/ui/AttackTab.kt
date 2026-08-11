@@ -97,21 +97,15 @@ fun AttackTab(
                         shape = RoundedCornerShape(14.dp)
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+                MitmControl(on = state.forwardMitm, onToggle = onToggleMitm)
                 Spacer(Modifier.height(8.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = state.oneWay,
-                        onClick = { onOneWay(!state.oneWay) },
-                        label = { Text("One-way poison only") },
-                        colors = chipColors()
-                    )
-                    FilterChip(
-                        selected = state.forwardMitm,
-                        onClick = { onToggleMitm(!state.forwardMitm) },
-                        label = { Text("Keep online (MITM)") },
-                        colors = chipColors()
-                    )
-                }
+                FilterChip(
+                    selected = state.oneWay,
+                    onClick = { onOneWay(!state.oneWay) },
+                    label = { Text("One-way poison only") },
+                    colors = chipColors()
+                )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(

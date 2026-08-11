@@ -33,6 +33,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableChipColors
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
@@ -233,6 +235,64 @@ fun IfaceSelector(state: MainUiState, onSelectIface: (Int) -> Unit) {
                         expanded = false
                     }
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Central, prominent MITM control. ON (default) = victim keeps internet and its traffic is routed
+ * through us (feeds Sniff/Spoof). OFF = cutoff: the target loses internet. Reused wherever the
+ * attack is configured so the meaning/warning is defined in exactly one place.
+ */
+@Composable
+fun MitmControl(on: Boolean, onToggle: (Boolean) -> Unit) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = NightCard),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (on) Mint.copy(alpha = 0.5f) else Danger.copy(alpha = 0.6f), RoundedCornerShape(18.dp))
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Keep target online (MITM)", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (on) "Routes traffic through this device (feeds Sniff / Spoof)"
+                        else "Cutoff mode — no data is collected",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Switch(
+                    checked = on,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Mint,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Danger
+                    )
+                )
+            }
+            if (!on) {
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Danger.copy(alpha = 0.14f))
+                        .border(1.dp, Danger.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        "⚠ Warning: with this OFF the target loses internet (cutoff / DoS).",
+                        color = Danger,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
         }
     }

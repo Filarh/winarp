@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "com.winarp.mobile"
     compileSdk = 34
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.winarp.mobile"
@@ -21,7 +21,11 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
-                arguments += listOf("-DANDROID_STL=c++_shared")
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    // 16 KB page-size alignment (Android 15+ / devices with 16 KB pages)
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                )
             }
         }
     }

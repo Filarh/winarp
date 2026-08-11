@@ -86,6 +86,8 @@ class LanScanner(
 
         var hosts = found.values
             .filter { !IpUtils.isZeroMac(it.mac) && it.ip != iface.ip }
+            // instant, offline vendor name from the MAC (ARP) — works even for phones
+            .map { it.copy(name = OuiDb.vendor(it.mac) ?: "-") }
             .sortedBy { IpUtils.ipv4ToLong(it.ip) }
 
         if (resolveName && hosts.isNotEmpty()) {
@@ -94,8 +96,9 @@ class LanScanner(
                 hosts.map { h ->
                     async {
                         nameSem.withPermit {
-                            val name = resolveDeviceName(h.ip)
-                            h.copy(name = name)
+                            // upgrade to a real hostname if it resolves; otherwise keep the vendor
+                            val dns = resolveDeviceName(h.ip)
+                            h.copy(name = if (dns != "-" && dns.isNotBlank()) dns else h.name)
                         }
                     }
                 }.awaitAll()

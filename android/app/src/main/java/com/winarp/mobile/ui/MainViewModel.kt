@@ -16,6 +16,7 @@ import com.winarp.mobile.net.IpUtils
 import com.winarp.mobile.net.LanScanner
 import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
+import com.winarp.mobile.net.OuiDb
 import com.winarp.mobile.net.RootHelper
 import com.winarp.mobile.net.RootNet
 import com.winarp.mobile.net.WebServer
@@ -30,8 +31,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,7 +53,7 @@ data class MainUiState(
     val toIp: String = "",
     val resolveName: Boolean = true,
     val oneWay: Boolean = false,
-    val forwardMitm: Boolean = false,
+    val forwardMitm: Boolean = true,
     val tab: Tab = Tab.Scan,
     val showRaw: Boolean = false,
     val forcePlaintext: Boolean = false,
@@ -117,6 +120,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         appendLog("Tip: scanning works without root; disruption attack needs Root + AF_PACKET")
         appendLog("For CTF / authorized sandbox only")
         appendLog("[i] logs -> ${fileLog.path()}")
+        viewModelScope.launch { withContext(Dispatchers.IO) { OuiDb.ensureLoaded(app) } }
         if (!NativeArp.loaded) {
             appendLog("[!] native library failed to load: ${NativeArp.loadError}")
         } else {
