@@ -307,7 +307,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun resolveGatewayMac(iface: IfaceInfo, gateway: String): String? {
+    private suspend fun resolveGatewayMac(iface: IfaceInfo, gateway: String): String? {
         val table = repo.readProcArp()[gateway]
         if (!table.isNullOrBlank() && !IpUtils.isZeroMac(table)) return table
         if (NativeArp.loaded) {

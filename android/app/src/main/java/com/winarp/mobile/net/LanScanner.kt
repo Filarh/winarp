@@ -75,7 +75,7 @@ class LanScanner(
         }
 
         // refresh arp table after probes
-        for ((ip, mac) in networkRepository.readProcArp()) {
+        for ((ip, mac) in networkRepository.readProcArp(forceRefresh = true)) {
             if (ip in targets || found.containsKey(ip) || sameSubnet(ip, iface)) {
                 found.putIfAbsent(ip, HostInfo(ip = ip, mac = mac))
                 found.computeIfPresent(ip) { _, old ->

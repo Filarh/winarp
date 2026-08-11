@@ -289,7 +289,7 @@ class ArpPoisoner(
         }
     }
 
-    private fun resolveMac(iface: IfaceInfo, ip: String): String? {
+    private suspend fun resolveMac(iface: IfaceInfo, ip: String): String? {
         val table = networkRepository.readProcArp()[ip]
         if (!table.isNullOrBlank() && !IpUtils.isZeroMac(table)) return table
 
