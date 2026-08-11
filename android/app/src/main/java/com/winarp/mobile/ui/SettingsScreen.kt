@@ -59,7 +59,8 @@ fun SettingsScreen(
     onClearLogs: () -> Unit,
     onRestoreNetwork: () -> Unit,
     onProxyPort: (Int) -> Unit,
-    onToggleAutoRestore: () -> Unit
+    onToggleAutoRestore: () -> Unit,
+    onExportCa: () -> String?
 ) {
     val context = LocalContext.current
     Scaffold(
@@ -149,6 +150,31 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(top = 4.dp)
                 )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "HTTPS decryption CA. Non-validating IoT/TV apps are decrypted with no client " +
+                        "change; to decrypt other (non-pinned) apps, install this CA as trusted on that device.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = {
+                        val path = onExportCa() ?: return@Button
+                        try {
+                            val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", File(path))
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/x-pem-file"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(send, "Export MITM CA"))
+                        } catch (_: Throwable) {
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Mint)
+                ) { Text("Export MITM CA (.pem)") }
             }
 
             SectionCard(title = "Restore / safety", icon = { Icon(Icons.Outlined.ClearAll, null, tint = Danger) }) {

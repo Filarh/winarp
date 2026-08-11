@@ -20,6 +20,7 @@ import com.winarp.mobile.net.NetworkRepository
 import com.winarp.mobile.net.OuiDb
 import com.winarp.mobile.net.RootHelper
 import com.winarp.mobile.net.RootNet
+import com.winarp.mobile.net.TlsMitm
 import com.winarp.mobile.net.WebServer
 import com.winarp.mobile.store.FileLogger
 import com.winarp.mobile.store.Prefs
@@ -101,6 +102,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = Prefs(app)
     private val fileLog = FileLogger(app)
+    private val tls = TlsMitm()
+    private val tlsPort = 8443
 
     init {
         // restore sticky settings from previous runs
@@ -397,10 +400,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun logFilePath(): String = fileLog.path()
 
     /** Undo every root-level network change we may have made (professional 'panic'/reset). */
+    /** Copy the MITM CA to a shareable file so the user can install it on devices they own. */
+    fun exportCaFile(): String? {
+        return try {
+            val a = getApplication<Application>()
+            val dir = (a.getExternalFilesDir("certs") ?: File(a.filesDir, "certs")).apply { mkdirs() }
+            val out = File(dir, "winarp_mitm_ca.pem")
+            a.assets.open("mitm_ca.pem").use { input -> out.outputStream().use { input.copyTo(it) } }
+            out.absolutePath
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun restoreNetwork() {
         val iface = _state.value.selectedIface
         capture.stop()
         web.stop()
+        tls.stop()
         _state.update { it.copy(hostControls = emptyMap(), forcePlaintext = false, showRaw = false) }
         if (iface != null) {
             viewModelScope.launch {
@@ -461,14 +478,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val map = _state.value.hostControls
-        // proxy needs the local server up — start it automatically
+        // proxy needs the local servers up — start them automatically
         if (map.values.any { it.proxied }) {
             val e = ensureWebServer()
-            if (e == null) appendLog("[+] local proxy server ready on :${_state.value.spoofConfig.port}")
+            if (e == null) appendLog("[+] local proxy (:80) ready on :${_state.value.spoofConfig.port}")
             else appendLog("[!] proxy server: $e")
+            if (!tls.running.value) {
+                val te = tls.start(getApplication<Application>(), tlsPort) { line -> appendLog(line) }
+                if (te == null) appendLog("[+] TLS MITM (:443) ready on :$tlsPort — decrypts non-validating/CA-trusting hosts")
+                else appendLog("[!] TLS proxy: $te")
+            }
         }
         viewModelScope.launch {
-            val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port)
+            val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port, tlsPort)
             if (err == null) appendLog("[+] traffic controls applied to ${map.size} host(s)")
             else appendLog("[!] traffic controls: $err")
         }
@@ -569,6 +591,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
         capture.stop()
         web.stop()
+        tls.stop()
         if (_state.value.autoRestore) {
             _state.value.selectedIface?.let { RootNet.revertAllDetached(it.name, _state.value.spoofConfig.port) }
         }

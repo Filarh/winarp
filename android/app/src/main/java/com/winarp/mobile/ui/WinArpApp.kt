@@ -64,7 +64,8 @@ fun WinArpRoot(vm: MainViewModel) {
             onClearLogs = vm::clearLogs,
             onRestoreNetwork = vm::restoreNetwork,
             onProxyPort = vm::updateSpoofPort,
-            onToggleAutoRestore = vm::toggleAutoRestore
+            onToggleAutoRestore = vm::toggleAutoRestore,
+            onExportCa = vm::exportCaFile
         )
         return
     }

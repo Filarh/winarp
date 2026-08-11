@@ -52,7 +52,8 @@ object RootNet {
     suspend fun applyControls(
         ifName: String,
         controls: Map<String, com.winarp.mobile.data.HostControl>,
-        proxyPort: Int
+        proxyPort: Int,
+        tlsPort: Int
     ): String? = withContext(Dispatchers.IO) {
         val sb = StringBuilder()
         sb.append("tc qdisc del dev $ifName root 2>/dev/null; ")
@@ -83,6 +84,7 @@ object RootNet {
             }
             if (c.proxied) {
                 sb.append("iptables -t nat -A WINARP_NAT -i $ifName -s $ip -p tcp --dport 80 -j REDIRECT --to-ports $proxyPort; ")
+                sb.append("iptables -t nat -A WINARP_NAT -i $ifName -s $ip -p tcp --dport 443 -j REDIRECT --to-ports $tlsPort; ")
             }
         }
         sb.append("echo DONE")
