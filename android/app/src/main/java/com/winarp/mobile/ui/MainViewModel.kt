@@ -38,7 +38,7 @@ data class MainUiState(
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
-    val status: String = "界面已就绪",
+    val status: String = "Ready",
     val rootState: RootState = RootState.Unknown,
     val logs: List<String> = emptyList(),
     val nativeLoaded: Boolean = NativeArp.loaded
@@ -58,13 +58,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     init {
-        appendLog("WinARP Android - 局域网扫描 / 多线程 ARP 污染")
-        appendLog("提示: 扫描可无 Root；断网攻击需要 Root + AF_PACKET")
-        appendLog("仅用于 CTF / 授权沙箱")
+        appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
+        appendLog("Tip: scanning works without root; disruption attack needs Root + AF_PACKET")
+        appendLog("For CTF / authorized sandbox only")
         if (!NativeArp.loaded) {
-            appendLog("[!] native 库加载失败: ${NativeArp.loadError}")
+            appendLog("[!] native library failed to load: ${NativeArp.loadError}")
         } else {
-            appendLog("[+] native 引擎已加载")
+            appendLog("[+] native engine loaded")
         }
         refreshIfaces()
         checkRoot()
@@ -82,20 +82,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         selectedIfaceIndex = if (list.isEmpty()) 0 else idx,
                         cidr = selected?.cidr ?: st.cidr,
                         gateway = selected?.gateway ?: st.gateway,
-                        status = if (list.isEmpty()) "未发现可用网卡，请连接 Wi-Fi" else "已加载 ${list.size} 个网卡"
+                        status = if (list.isEmpty()) "No usable NIC found, please connect Wi-Fi" else "Loaded ${list.size} NIC(s)"
                     )
                 }
                 if (list.isEmpty()) {
-                    appendLog("[-] 没有可用 IPv4 网卡")
+                    appendLog("[-] no usable IPv4 NIC")
                 } else {
-                    appendLog("[+] 网卡 ${list.size} 个")
+                    appendLog("[+] ${list.size} NIC(s)")
                     list.forEach {
                         appendLog("    ${it.name} ip=${it.ip} mac=${it.mac} gw=${it.gateway.ifBlank { "-" }}")
                     }
                 }
             } catch (t: Throwable) {
-                appendLog("[-] 网卡加载失败: ${t.message}")
-                _state.update { it.copy(status = "网卡加载失败") }
+                appendLog("[-] NIC load failed: ${t.message}")
+                _state.update { it.copy(status = "NIC load failed") }
             }
         }
     }
@@ -105,9 +105,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val rs = RootHelper.checkRoot()
             _state.update { it.copy(rootState = rs) }
             when (rs) {
-                RootState.Available -> appendLog("[+] Root 可用")
-                RootState.Denied -> appendLog("[!] 检测到 su 但未授权 Root")
-                RootState.Missing -> appendLog("[!] 未检测到 Root 环境（攻击功能不可用）")
+                RootState.Available -> appendLog("[+] Root available")
+                RootState.Denied -> appendLog("[!] su detected but root not authorized")
+                RootState.Missing -> appendLog("[!] no root environment detected (attack unavailable)")
                 RootState.Unknown -> Unit
             }
         }
@@ -157,7 +157,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (st.scanning || st.attacking) return
         val iface = st.selectedIface
         if (iface == null) {
-            appendLog("[-] 请先选择网卡")
+            appendLog("[-] select a NIC first")
             return
         }
         val workers = st.workers.toIntOrNull() ?: 64
@@ -166,13 +166,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 scanning = true,
-                status = "正在扫描 $cidr ...",
+                status = "Scanning $cidr ...",
                 scanProgress = 0 to 0,
                 hosts = emptyList(),
                 selectedHostIps = emptySet()
             )
         }
-        appendLog("[*] 开始扫描 $cidr workers=$workers")
+        appendLog("[*] start scan $cidr workers=$workers")
 
         viewModelScope.launch {
             try {
@@ -185,7 +185,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { cur ->
                         cur.copy(
                             scanProgress = done to total,
-                            status = "扫描中 $done/$total"
+                            status = "Scanning $done/$total"
                         )
                     }
                 }
@@ -194,20 +194,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         hosts = hosts,
                         scanning = false,
                         scanProgress = null,
-                        status = "扫描完成，发现 ${hosts.size} 台设备",
+                        status = "Scan complete, ${hosts.size} device(s) found",
                         selectedHostIps = emptySet()
                     )
                 }
-                appendLog("[+] 扫描完成: ${hosts.size} hosts")
+                appendLog("[+] scan complete: ${hosts.size} hosts")
                 hosts.take(30).forEach { h ->
                     appendLog("    ${h.ip}  ${h.mac}  ${h.name}")
                 }
                 if (hosts.size > 30) appendLog("    ... ${hosts.size - 30} more")
             } catch (t: Throwable) {
                 _state.update {
-                    it.copy(scanning = false, scanProgress = null, status = "扫描失败")
+                    it.copy(scanning = false, scanProgress = null, status = "Scan failed")
                 }
-                appendLog("[-] 扫描失败: ${t.message}")
+                appendLog("[-] Scan failed: ${t.message}")
             }
         }
     }
@@ -216,8 +216,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val st = _state.value
         val ips = st.hosts.filter { it.ip in st.selectedHostIps }.map { it.ip }
         if (ips.isEmpty()) {
-            appendLog("[-] 请先在列表中选择目标")
-            _state.update { it.copy(status = "未选择目标") }
+            appendLog("[-] select targets from the list first")
+            _state.update { it.copy(status = "No targets selected") }
             return
         }
         startAttack(ips, "selected")
@@ -227,8 +227,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val st = _state.value
         val ips = IpUtils.collectTargets(st.targetSpec, st.fromIp, st.toIp)
         if (ips.isEmpty()) {
-            appendLog("[-] 目标 IP/段 为空或无效")
-            _state.update { it.copy(status = "目标无效") }
+            appendLog("[-] target IP/range empty or invalid")
+            _state.update { it.copy(status = "Invalid target") }
             return
         }
         startAttack(ips, "range")
@@ -239,20 +239,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (st.attacking || st.scanning) return
         val iface = st.selectedIface
         if (iface == null) {
-            appendLog("[-] 无网卡")
+            appendLog("[-] no NIC")
             return
         }
         val gateway = st.gateway.ifBlank { iface.gateway }
         if (!IpUtils.isValidIpv4(gateway)) {
-            appendLog("[-] 网关无效")
-            _state.update { it.copy(status = "网关无效") }
+            appendLog("[-] Invalid gateway")
+            _state.update { it.copy(status = "Invalid gateway") }
             return
         }
         val workers = st.workers.toIntOrNull() ?: 32
         val interval = st.intervalMs.toIntOrNull() ?: 1000
 
-        _state.update { it.copy(attacking = true, status = "正在解析目标...") }
-        appendLog("[*] 启动攻击 tag=$tag targets=${targets.size} workers=$workers")
+        _state.update { it.copy(attacking = true, status = "Resolving targets...") }
+        appendLog("[*] launch attack tag=$tag targets=${targets.size} workers=$workers")
 
         viewModelScope.launch {
             try {
@@ -265,19 +265,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     log = { appendLog(it) }
                 )
                 if (poisonTargets.isEmpty()) {
-                    _state.update { it.copy(attacking = false, status = "没有可达目标") }
+                    _state.update { it.copy(attacking = false, status = "No reachable targets") }
                     appendLog("[-] no reachable targets")
                     return@launch
                 }
 
                 val gwMac = resolveGatewayMac(iface, gateway)
                 if (gwMac == null) {
-                    _state.update { it.copy(attacking = false, status = "网关 MAC 解析失败") }
+                    _state.update { it.copy(attacking = false, status = "Gateway MAC resolution failed") }
                     appendLog("[-] gateway MAC $gateway not found")
                     return@launch
                 }
 
-                _state.update { it.copy(status = "污染中 · ${poisonTargets.size} 目标") }
+                _state.update { it.copy(status = "Poisoning · ${poisonTargets.size} targets") }
                 poisoner.start(
                     iface = iface,
                     targets = poisonTargets,
@@ -288,12 +288,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     log = { appendLog(it) },
                     onStopped = {
                         _state.update { cur ->
-                            cur.copy(attacking = false, status = "已停止")
+                            cur.copy(attacking = false, status = "Stopped")
                         }
                     }
                 )
             } catch (t: Throwable) {
-                _state.update { it.copy(attacking = false, status = "攻击失败") }
+                _state.update { it.copy(attacking = false, status = "Attack failed") }
                 appendLog("[-] ${t.message}")
             }
         }
@@ -301,9 +301,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopAttack() {
         viewModelScope.launch {
-            _state.update { it.copy(status = "正在停止...") }
+            _state.update { it.copy(status = "Stopping...") }
             poisoner.stop { appendLog(it) }
-            _state.update { it.copy(attacking = false, status = "已停止") }
+            _state.update { it.copy(attacking = false, status = "Stopped") }
         }
     }
 

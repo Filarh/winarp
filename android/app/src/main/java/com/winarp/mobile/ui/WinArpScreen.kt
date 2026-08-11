@@ -142,7 +142,7 @@ fun WinArpScreen(
                 actions = {
                     RootBadge(state.rootState)
                     IconButton(onClick = onRefreshIfaces) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "刷新", tint = Color.White)
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -175,7 +175,7 @@ fun WinArpScreen(
             }
 
             item {
-                SectionCard(title = "网络接口", icon = {
+                SectionCard(title = "Network Interface", icon = {
                     Icon(Icons.Outlined.DeviceHub, null, tint = Accent)
                 }) {
                     IfaceSelector(
@@ -185,25 +185,25 @@ fun WinArpScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MiniMetric("本机 IP", state.selectedIface?.ip ?: "-", Modifier.weight(1f))
+                        MiniMetric("Local IP", state.selectedIface?.ip ?: "-", Modifier.weight(1f))
                         MiniMetric("MAC", state.selectedIface?.mac ?: "-", Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MiniMetric("网关", state.gateway.ifBlank { "-" }, Modifier.weight(1f))
-                        MiniMetric("网段", state.cidr.ifBlank { "-" }, Modifier.weight(1f))
+                        MiniMetric("Gateway", state.gateway.ifBlank { "-" }, Modifier.weight(1f))
+                        MiniMetric("Subnet", state.cidr.ifBlank { "-" }, Modifier.weight(1f))
                     }
                 }
             }
 
             item {
-                SectionCard(title = "扫描参数", icon = {
+                SectionCard(title = "Scan Parameters", icon = {
                     Icon(Icons.Outlined.WifiFind, null, tint = Mint)
                 }) {
                     OutlinedTextField(
                         value = state.cidr,
                         onValueChange = onCidr,
-                        label = { Text("扫描网段 CIDR") },
+                        label = { Text("Scan range (CIDR)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = fieldColors,
@@ -214,7 +214,7 @@ fun WinArpScreen(
                         OutlinedTextField(
                             value = state.workers,
                             onValueChange = onWorkers,
-                            label = { Text("线程") },
+                            label = { Text("Threads") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -224,7 +224,7 @@ fun WinArpScreen(
                         OutlinedTextField(
                             value = state.intervalMs,
                             onValueChange = onInterval,
-                            label = { Text("间隔 ms") },
+                            label = { Text("Interval ms") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -236,7 +236,7 @@ fun WinArpScreen(
                     OutlinedTextField(
                         value = state.gateway,
                         onValueChange = onGateway,
-                        label = { Text("网关 IP") },
+                        label = { Text("Gateway IP") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = fieldColors,
@@ -247,13 +247,13 @@ fun WinArpScreen(
                         FilterChip(
                             selected = state.resolveName,
                             onClick = { onResolveName(!state.resolveName) },
-                            label = { Text("解析设备名") },
+                            label = { Text("Resolve device name") },
                             colors = chipColors()
                         )
                         FilterChip(
                             selected = state.oneWay,
                             onClick = { onOneWay(!state.oneWay) },
-                            label = { Text("仅单向污染") },
+                            label = { Text("One-way poison only") },
                             colors = chipColors()
                         )
                     }
@@ -274,26 +274,26 @@ fun WinArpScreen(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text("扫描局域网")
+                            Text("Scan LAN")
                         }
                         OutlinedButton(
                             onClick = { onSelectAll(true) },
                             enabled = state.hosts.isNotEmpty(),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp)
-                        ) { Text("全选列表") }
+                        ) { Text("Select all") }
                     }
                 }
             }
 
             item {
-                SectionCard(title = "目标 IP / 段", icon = {
+                SectionCard(title = "Target IP / range", icon = {
                     Icon(Icons.Outlined.Bolt, null, tint = Warning)
                 }) {
                     OutlinedTextField(
                         value = state.targetSpec,
                         onValueChange = onTarget,
-                        label = { Text("目标列表 / 范围 例 192.168.1.10-20") },
+                        label = { Text("Target list / range e.g. 192.168.1.10-20") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = fieldColors,
@@ -304,7 +304,7 @@ fun WinArpScreen(
                         OutlinedTextField(
                             value = state.fromIp,
                             onValueChange = onFrom,
-                            label = { Text("从") },
+                            label = { Text("From") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             colors = fieldColors,
@@ -313,7 +313,7 @@ fun WinArpScreen(
                         OutlinedTextField(
                             value = state.toIp,
                             onValueChange = onTo,
-                            label = { Text("到") },
+                            label = { Text("To") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             colors = fieldColors,
@@ -328,14 +328,14 @@ fun WinArpScreen(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Danger)
-                        ) { Text("攻击选中") }
+                        ) { Text("Attack selected") }
                         Button(
                             onClick = onAttackRange,
                             enabled = !state.scanning && !state.attacking,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE0673D))
-                        ) { Text("攻击 IP 段") }
+                        ) { Text("Attack IP range") }
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
@@ -346,14 +346,14 @@ fun WinArpScreen(
                     ) {
                         Icon(Icons.Outlined.StopCircle, null)
                         Spacer(Modifier.width(6.dp))
-                        Text("停止并恢复")
+                        Text("Stop & restore")
                     }
                 }
             }
 
             item {
                 Text(
-                    "设备列表 · ${state.hosts.size}",
+                    "Devices · ${state.hosts.size}",
                     style = MaterialTheme.typography.titleMedium,
                     color = Color.White,
                     modifier = Modifier.padding(top = 4.dp, start = 4.dp)
@@ -375,11 +375,11 @@ fun WinArpScreen(
             }
 
             item {
-                SectionCard(title = "运行日志", icon = {
+                SectionCard(title = "Log", icon = {
                     Icon(Icons.Outlined.Security, null, tint = TextSecondary)
                 }, action = {
                     IconButton(onClick = onClearLog) {
-                        Icon(Icons.Outlined.ClearAll, "清空", tint = TextSecondary)
+                        Icon(Icons.Outlined.ClearAll, "Clear", tint = TextSecondary)
                     }
                 }) {
                     val scroll = rememberScrollState()
@@ -394,7 +394,7 @@ fun WinArpScreen(
                             .verticalScroll(scroll)
                     ) {
                         Text(
-                            text = state.logs.joinToString("\n").ifBlank { "暂无日志" },
+                            text = state.logs.joinToString("\n").ifBlank { "No logs yet" },
                             color = Color(0xFFB7C7E6),
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
@@ -406,7 +406,7 @@ fun WinArpScreen(
 
             item {
                 Text(
-                    "仅用于 CTF / 授权沙箱测试。断网功能需 Root。",
+                    "For CTF / authorized sandbox testing only. Disruption features require root.",
                     color = TextSecondary,
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(bottom = 24.dp, start = 4.dp, end = 4.dp)
@@ -506,7 +506,7 @@ private fun StatusHero(
                 Spacer(Modifier.height(8.dp))
             }
             Text(
-                if (nativeLoaded) "Native ARP 引擎就绪" else "Native 引擎未加载",
+                if (nativeLoaded) "Native ARP engine ready" else "Native engine not loaded",
                 color = TextSecondary,
                 style = MaterialTheme.typography.labelMedium
             )
@@ -554,7 +554,7 @@ private fun IfaceSelector(
     fieldColors: androidx.compose.material3.TextFieldColors
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val label = state.selectedIface?.toString() ?: "未找到网卡"
+    val label = state.selectedIface?.toString() ?: "No NIC found"
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
             value = label,
@@ -563,7 +563,7 @@ private fun IfaceSelector(
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(),
-            label = { Text("选择网卡") },
+            label = { Text("Select NIC") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             colors = fieldColors,
             shape = RoundedCornerShape(14.dp)
@@ -664,8 +664,8 @@ private fun EmptyHosts() {
         ) {
             Icon(Icons.Outlined.WifiFind, null, tint = TextSecondary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(8.dp))
-            Text("暂无设备", color = Color.White, fontWeight = FontWeight.SemiBold)
-            Text("连接 Wi-Fi 后点击“扫描局域网”", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text("No devices", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text("Connect Wi-Fi, then tap "Scan LAN"", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

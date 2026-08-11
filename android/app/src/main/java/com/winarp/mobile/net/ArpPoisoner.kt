@@ -111,17 +111,17 @@ class ArpPoisoner(
                 useRootDaemon = false
                 val canRaw = NativeArp.canOpenRaw(iface.name)
                 if (canRaw) {
-                    log("[+] 当前进程可直接发送 AF_PACKET")
+                    log("[+] current process can send AF_PACKET directly")
                 } else {
-                    log("[!] 普通权限无法打开原始套接字，尝试 Root 守护进程...")
+                    log("[!] normal permissions cannot open raw socket, trying root daemon...")
                     val err = rootDaemon.ensureStarted()
                     if (err != null) {
-                        log("[!] Root 守护进程启动失败: $err")
-                        log("[!] 请授予 Root 后重试；扫描功能仍可无 Root 使用")
+                        log("[!] root daemon failed to start: $err")
+                        log("[!] grant root and retry; scanning still works without root")
                         throw IllegalStateException("raw socket unavailable, need root")
                     }
                     useRootDaemon = true
-                    log("[+] Root 守护进程已就绪")
+                    log("[+] root daemon ready")
                 }
 
                 val workers = targets.map { t ->

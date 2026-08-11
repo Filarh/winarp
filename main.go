@@ -14,18 +14,18 @@ import (
 func usage() {
 	fmt.Fprintf(os.Stderr, `winarp - Windows LAN scan + multi-thread ARP poison (CTF)
 
-无参数启动: 中文原生桌面 GUI
-命令行:
+No args: launch native desktop GUI
+Command line:
   winarp gui
   winarp ifaces
   winarp scan [-cidr ...] [-workers N]
   winarp cut -target 192.168.31.105-110 [-workers N]
   winarp poison -from 192.168.31.105 -to 192.168.31.110
 
-说明:
-  * 多目标时每个目标独立协程并发污染
-  * 需要管理员 + Npcap
-  * 仅用于 CTF/授权沙箱
+Notes:
+  * with multiple targets, each is poisoned concurrently in its own goroutine
+  * requires admin + Npcap
+  * for CTF/authorized sandbox only
 `)
 }
 

@@ -22,7 +22,7 @@ data class IfaceInfo(
         }
 
     override fun toString(): String {
-        val kind = if (isWifi) "Wi-Fi" else "网卡"
+        val kind = if (isWifi) "Wi-Fi" else "NIC"
         return "$kind · $displayName · $ip"
     }
 }

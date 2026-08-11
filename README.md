@@ -2,7 +2,7 @@
 
 Windows LAN scan + multi-thread ARP poison (CTF), with Android port.
 
-> **仅用于 CTF / 授权沙箱。** Do not use on unauthorized networks.
+> **For CTF / authorized sandbox only.** Do not use on unauthorized networks.
 
 ## Windows
 
