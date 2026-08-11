@@ -665,7 +665,7 @@ private fun EmptyHosts() {
             Icon(Icons.Outlined.WifiFind, null, tint = TextSecondary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.height(8.dp))
             Text("No devices", color = Color.White, fontWeight = FontWeight.SemiBold)
-            Text("Connect Wi-Fi, then tap "Scan LAN"", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text("Connect Wi-Fi, then tap Scan LAN", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
