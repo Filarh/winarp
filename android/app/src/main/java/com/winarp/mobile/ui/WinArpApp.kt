@@ -12,6 +12,8 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.WifiFind
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winarp.mobile.data.Tab
 import com.winarp.mobile.ui.theme.Accent
+import com.winarp.mobile.ui.theme.Mint
 import com.winarp.mobile.ui.theme.NightBg
 import com.winarp.mobile.ui.theme.NightCard
 import com.winarp.mobile.ui.theme.TextSecondary
@@ -91,7 +94,17 @@ fun WinArpRoot(vm: MainViewModel) {
                 )
             )
         },
-        bottomBar = { BottomNav(state.tab, vm::selectTab) }
+        bottomBar = {
+            val capturing by vm.captureRunning.collectAsStateWithLifecycle()
+            val serving by vm.webRunning.collectAsStateWithLifecycle()
+            val active = buildSet {
+                if (state.scanning) add(Tab.Scan)
+                if (state.attacking || state.hostControls.values.any { it.active }) add(Tab.Attack)
+                if (capturing) add(Tab.Sniff)
+                if (serving) add(Tab.Spoof)
+            }
+            BottomNav(state.tab, active, vm::selectTab)
+        }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -180,7 +193,7 @@ fun WinArpRoot(vm: MainViewModel) {
 private data class NavItem(val tab: Tab, val icon: ImageVector, val label: String)
 
 @Composable
-private fun BottomNav(current: Tab, onSelect: (Tab) -> Unit) {
+private fun BottomNav(current: Tab, active: Set<Tab>, onSelect: (Tab) -> Unit) {
     val items = listOf(
         NavItem(Tab.Scan, Icons.Outlined.WifiFind, "Scan"),
         NavItem(Tab.Attack, Icons.Outlined.Bolt, "Attack"),
@@ -193,7 +206,15 @@ private fun BottomNav(current: Tab, onSelect: (Tab) -> Unit) {
             NavigationBarItem(
                 selected = current == item.tab,
                 onClick = { onSelect(item.tab) },
-                icon = { Icon(item.icon, contentDescription = item.label) },
+                icon = {
+                    if (item.tab in active) {
+                        BadgedBox(badge = { Badge(containerColor = Mint) }) {
+                            Icon(item.icon, contentDescription = item.label)
+                        }
+                    } else {
+                        Icon(item.icon, contentDescription = item.label)
+                    }
+                },
                 label = { Text(item.label) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = Accent,
