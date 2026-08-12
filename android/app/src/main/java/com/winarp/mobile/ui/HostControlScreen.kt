@@ -249,7 +249,7 @@ private fun SpeedMeter(bps: Double, capKbps: Int, blocked: Boolean, mitm: Boolea
                 val shown by animateFloatAsState(bps.toFloat(), label = "spd")
                 val (num, unit) = fmtSpeed(shown.toDouble())
                 val capBps = if (capKbps > 0) capKbps * 1000.0 else 0.0
-                val frac = if (capBps > 0) (shown / capBps).coerceIn(0f, 1f) else (shown / 1.0e8f).coerceIn(0f, 1f)
+                val frac = if (capBps > 0) (shown / capBps.toFloat()).coerceIn(0f, 1f) else (shown / 1.0e8f).coerceIn(0f, 1f)
                 val atCap = capBps > 0 && shown >= capBps * 0.95
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(num, color = if (atCap) Warning else Accent, fontWeight = FontWeight.Bold, fontSize = 44.sp)
