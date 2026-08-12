@@ -85,6 +85,12 @@ object RootNet {
             if (c.proxied) {
                 sb.append("iptables -t nat -A WINARP_NAT -i $ifName -s $ip -p tcp --dport 80 -j REDIRECT --to-ports $proxyPort; ")
                 sb.append("iptables -t nat -A WINARP_NAT -i $ifName -s $ip -p tcp --dport 443 -j REDIRECT --to-ports $tlsPort; ")
+                // Kill the escape hatches so HTTPS is FORCED through the TCP REDIRECT above:
+                //   QUIC (HTTP/3, UDP/443) — else modern apps bypass the TLS proxy entirely
+                //   DoT (853) — else DNS stays encrypted and we can't see/log hostnames
+                sb.append("iptables -A WINARP_CTL -i $ifName -s $ip -p udp --dport 443 -j REJECT; ")
+                sb.append("iptables -A WINARP_CTL -i $ifName -s $ip -p udp --dport 853 -j REJECT; ")
+                sb.append("iptables -A WINARP_CTL -i $ifName -s $ip -p tcp --dport 853 -j REJECT; ")
             }
         }
         sb.append("echo DONE")
