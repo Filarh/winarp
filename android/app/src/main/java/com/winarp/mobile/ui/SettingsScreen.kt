@@ -55,7 +55,9 @@ fun SettingsScreen(
     logPath: String,
     proxyPort: Int,
     autoRestore: Boolean,
+    keepOnline: Boolean,
     onBack: () -> Unit,
+    onToggleKeepOnline: (Boolean) -> Unit,
     onRefreshIfaces: () -> Unit,
     onClearLogs: () -> Unit,
     onRestoreNetwork: () -> Unit,
@@ -126,6 +128,22 @@ fun SettingsScreen(
                     ) { Text("Export log") }
                     OutlinedButton(onClick = onClearLogs, shape = RoundedCornerShape(12.dp)) { Text("Clear log") }
                 }
+            }
+
+            SectionCard(title = "Attack defaults", icon = { Icon(Icons.Outlined.DeviceHub, null, tint = Accent) }) {
+                FilterChip(
+                    selected = keepOnline,
+                    onClick = { onToggleKeepOnline(!keepOnline) },
+                    label = { Text("Keep targets online by default (MITM)") },
+                    colors = chipColors()
+                )
+                Text(
+                    if (keepOnline) "Attacks route the target through this device so you can measure/limit/inspect."
+                    else "Attacks run in CUTOFF mode by default — targets lose internet; throughput can't be measured.",
+                    color = if (keepOnline) TextSecondary else Danger,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             SectionCard(title = "Proxy / server", icon = { Icon(Icons.Outlined.DeviceHub, null, tint = Accent) }) {

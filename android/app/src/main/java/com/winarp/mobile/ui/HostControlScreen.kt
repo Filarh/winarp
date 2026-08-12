@@ -59,6 +59,8 @@ fun HostControlScreen(
     name: String,
     control: HostControl,
     bps: Double,
+    mitm: Boolean,
+    attacking: Boolean,
     onEdit: (String, (HostControl) -> HostControl) -> Unit,
     onApply: () -> Unit,
     onBack: () -> Unit
@@ -96,7 +98,13 @@ fun HostControlScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            SpeedMeter(bps = bps, capKbps = control.kbps)
+            SpeedMeter(
+                bps = bps,
+                capKbps = control.kbps,
+                blocked = control.blocked,
+                mitm = mitm,
+                attacking = attacking
+            )
 
             LabeledSlider(
                 icon = { Icon(Icons.Outlined.Speed, null, tint = Accent) },
@@ -221,36 +229,60 @@ private fun SwitchRow(
 }
 
 @Composable
-private fun SpeedMeter(bps: Double, capKbps: Int) {
-    val shown by animateFloatAsState(bps.toFloat(), label = "spd")
-    val capBps = if (capKbps > 0) capKbps * 1000.0 else 0.0
-    val frac = if (capBps > 0) (shown / capBps).coerceIn(0f, 1f) else (shown / 1.0e8f).coerceIn(0f, 1f)
-    val atCap = capBps > 0 && shown >= capBps * 0.95
+private fun SpeedMeter(bps: Double, capKbps: Int, blocked: Boolean, mitm: Boolean, attacking: Boolean) {
+    val cutoff = blocked || (attacking && !mitm)
+    val measuring = attacking && mitm && !blocked
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Live throughput (real)", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Text("Live throughput (real, via MITM)", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(2.dp))
-        val (num, unit) = fmtSpeed(shown.toDouble())
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(num, color = if (atCap) Warning else Accent, fontWeight = FontWeight.Bold, fontSize = 44.sp)
-            Spacer(Modifier.width(6.dp))
-            Text(unit, color = TextSecondary, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+        when {
+            cutoff -> {
+                Text("OFFLINE", color = Danger, fontWeight = FontWeight.Bold, fontSize = 40.sp)
+                Text(
+                    if (blocked) "internet cut for this device (blocked)"
+                    else "Enable 'Keep online (MITM)' to measure throughput",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+            measuring -> {
+                val shown by animateFloatAsState(bps.toFloat(), label = "spd")
+                val (num, unit) = fmtSpeed(shown.toDouble())
+                val capBps = if (capKbps > 0) capKbps * 1000.0 else 0.0
+                val frac = if (capBps > 0) (shown / capBps).coerceIn(0f, 1f) else (shown / 1.0e8f).coerceIn(0f, 1f)
+                val atCap = capBps > 0 && shown >= capBps * 0.95
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(num, color = if (atCap) Warning else Accent, fontWeight = FontWeight.Bold, fontSize = 44.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(unit, color = TextSecondary, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+                }
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { frac },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp),
+                    color = if (atCap) Warning else Accent,
+                    trackColor = Stroke
+                )
+                Text(
+                    if (capKbps > 0) "capped at " + (if (capKbps >= 1000) String.format(Locale.US, "%.1f Mbps", capKbps / 1000.0) else "$capKbps kbps")
+                    else "no cap — this is real forwarded traffic",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            else -> {
+                Text("—", color = TextSecondary, fontWeight = FontWeight.Bold, fontSize = 40.sp)
+                Text(
+                    "Apply to route this device through us (MITM) and measure its real throughput. " +
+                        "Reading it requires being in-path — there is no passive way.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { frac },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp),
-            color = if (atCap) Warning else Accent,
-            trackColor = Stroke
-        )
-        Text(
-            if (capKbps > 0) "capped at " + (if (capKbps >= 1000) String.format(Locale.US, "%.1f Mbps", capKbps / 1000.0) else "$capKbps kbps")
-            else "no cap — set a bandwidth limit below and Apply",
-            color = TextSecondary,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(top = 4.dp)
-        )
     }
 }
 

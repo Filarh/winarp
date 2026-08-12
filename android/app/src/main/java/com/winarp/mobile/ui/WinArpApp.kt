@@ -52,6 +52,8 @@ fun WinArpRoot(vm: MainViewModel) {
             name = state.hosts.firstOrNull { it.ip == editIp }?.name ?: "",
             control = state.hostControls[editIp] ?: com.winarp.mobile.data.HostControl(),
             bps = bps,
+            mitm = state.forwardMitm,
+            attacking = state.attacking,
             onEdit = vm::editHostControl,
             onApply = vm::applyHostControls,
             onBack = vm::closeHostControls
@@ -64,7 +66,9 @@ fun WinArpRoot(vm: MainViewModel) {
             logPath = vm.logFilePath(),
             proxyPort = state.spoofConfig.port,
             autoRestore = state.autoRestore,
+            keepOnline = state.forwardMitm,
             onBack = vm::closeSettings,
+            onToggleKeepOnline = vm::updateForwardMitm,
             onRefreshIfaces = vm::refreshIfaces,
             onClearLogs = vm::clearLogs,
             onRestoreNetwork = vm::restoreNetwork,
