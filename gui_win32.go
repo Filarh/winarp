@@ -328,16 +328,16 @@ func loadIfacesAsync() {
 	// never call from UI thread
 	ifaces, err := listWindowsIfaces()
 	if err != nil {
-		appendLog("[-] 读取网卡失败: " + err.Error())
+		appendLog("[-] failed to read NICs: " + err.Error())
 		postUI(WM_APPIFACES, 1, 0)
 		return
 	}
-	// 不调用 PacketGetAdapterNames，避免卡住
+	// Do not call PacketGetAdapterNames, to avoid hanging
 	ifaces = fillPcapNames(ifaces)
 	g.mu.Lock()
 	g.ifaces = ifaces
 	g.mu.Unlock()
-	appendLog(fmt.Sprintf("[+] 网卡加载完成: %d 张", len(ifaces)))
+	appendLog(fmt.Sprintf("[+] NIC load complete: %d", len(ifaces)))
 	postUI(WM_APPIFACES, 0, 0)
 }
 
@@ -353,14 +353,14 @@ func applyIfacesUI(hwnd syscall.Handle) {
 		if it.Gateway != nil {
 			gw = it.Gateway.String()
 		}
-		label := fmt.Sprintf("%s | %s | 网关 %s", it.Description, it.IP, gw)
+		label := fmt.Sprintf("%s | %s | gateway %s", it.Description, it.IP, gw)
 		comboAdd(hCombo, label)
 		if it.Gateway != nil && !it.Gateway.IsUnspecified() && len(it.IP) > 0 && it.IP[0] == 192 {
 			best = i
 		}
 	}
 	if len(ifaces) == 0 {
-		setText(getCtrl(hwnd, IDC_STATUS), "状态: 未发现可用网卡")
+		setText(getCtrl(hwnd, IDC_STATUS), "Status: no usable NIC found")
 		return
 	}
 	pSendMessageW.Call(uintptr(hCombo), CB_SETCURSEL, uintptr(best), 0)
@@ -370,12 +370,12 @@ func applyIfacesUI(hwnd syscall.Handle) {
 	if ip := ifaces[best].IP.To4(); ip != nil {
 		setText(getCtrl(hwnd, IDC_CIDR), fmt.Sprintf("%d.%d.%d.0/24", ip[0], ip[1], ip[2]))
 	}
-	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("状态: 就绪 | 网卡 %d 张", len(ifaces)))
+	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("Status: ready | NICs %d", len(ifaces)))
 }
 
 func refreshIfacesUI(hwnd syscall.Handle) {
-	setText(getCtrl(hwnd, IDC_STATUS), "状态: 正在加载网卡...")
-	appendLog("[*] 后台加载网卡列表...")
+	setText(getCtrl(hwnd, IDC_STATUS), "Status: loading NICs...")
+	appendLog("[*] background loading NIC list...")
 	go loadIfacesAsync()
 }
 
@@ -384,7 +384,7 @@ func selectedIface(hwnd syscall.Handle) (IfaceInfo, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if idx < 0 || idx >= len(g.ifaces) {
-		return IfaceInfo{}, fmt.Errorf("请选择网卡（若刚启动请等待网卡加载完成）")
+		return IfaceInfo{}, fmt.Errorf("select a NIC (if just launched, wait for NIC loading to finish)")
 	}
 	return g.ifaces[idx], nil
 }
@@ -403,7 +403,7 @@ func fillHostList(hwnd syscall.Handle) {
 		line := fmt.Sprintf("%-16s  %-18s  %-20s  %s", h.IP, h.MAC, name, h.Note)
 		listAdd(hList, line)
 	}
-	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("状态: 就绪 | 设备 %d 台", len(hosts)))
+	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("Status: ready | devices %d", len(hosts)))
 }
 
 func doScan(hwnd syscall.Handle) {
@@ -412,7 +412,7 @@ func doScan(hwnd syscall.Handle) {
 	}
 	iface, err := selectedIface(hwnd)
 	if err != nil {
-		msgBox("提示", err.Error(), MB_ICONWARNING)
+		msgBox("Notice", err.Error(), MB_ICONWARNING)
 		return
 	}
 	cidr := strings.TrimSpace(getText(getCtrl(hwnd, IDC_CIDR)))
@@ -428,8 +428,8 @@ func doScan(hwnd syscall.Handle) {
 		workers = 32
 	}
 	setBusy(hwnd, true, false)
-	setText(getCtrl(hwnd, IDC_STATUS), "状态: 正在扫描（后台进行）...")
-	appendLog(fmt.Sprintf("[*] 开始扫描 %s workers=%d 解析名称=%v", cidr, workers, resolveName))
+	setText(getCtrl(hwnd, IDC_STATUS), "Status: scanning (in background)...")
+	appendLog(fmt.Sprintf("[*] start scan %s workers=%d resolveName=%v", cidr, workers, resolveName))
 	go func() {
 		doneHB := make(chan struct{})
 		go func() {
@@ -442,29 +442,29 @@ func doScan(hwnd syscall.Handle) {
 					return
 				case <-tk.C:
 					n++
-					appendLog(fmt.Sprintf("[*] 扫描进行中... %ds", n*2))
+					appendLog(fmt.Sprintf("[*] scanning... %ds", n*2))
 				}
 			}
 		}()
 		hosts, err := scanLAN(iface, cidr, workers, 500*time.Millisecond, resolveName, 300*time.Millisecond)
 		close(doneHB)
 		if err != nil {
-			appendLog("[-] 扫描失败: " + err.Error())
+			appendLog("[-] scan failed: " + err.Error())
 			postUI(WM_APPDONE, 1, 0)
 			return
 		}
 		for i := range hosts {
 			if iface.Gateway != nil && hosts[i].IP.Equal(iface.Gateway) {
-				hosts[i].Note = "网关"
+				hosts[i].Note = "gateway"
 			}
 			if hosts[i].IP.Equal(iface.IP) {
-				hosts[i].Note = "本机"
+				hosts[i].Note = "local"
 			}
 		}
 		g.mu.Lock()
 		g.hosts = hosts
 		g.mu.Unlock()
-		appendLog(fmt.Sprintf("[+] 扫描完成，发现 %d 台设备", len(hosts)))
+		appendLog(fmt.Sprintf("[+] scan complete, found %d device(s)", len(hosts)))
 		postUI(WM_APPHOST, 0, 0)
 		postUI(WM_APPDONE, 0, 0)
 	}()
@@ -472,12 +472,12 @@ func doScan(hwnd syscall.Handle) {
 
 func startAttack(hwnd syscall.Handle, targets []net.IP, tag string) {
 	if len(targets) == 0 {
-		msgBox("提示", "没有可攻击的目标", MB_ICONWARNING)
+		msgBox("Notice", "no attackable targets", MB_ICONWARNING)
 		return
 	}
 	iface, err := selectedIface(hwnd)
 	if err != nil {
-		msgBox("提示", err.Error(), MB_ICONWARNING)
+		msgBox("Notice", err.Error(), MB_ICONWARNING)
 		return
 	}
 	gwText := strings.TrimSpace(getText(getCtrl(hwnd, IDC_GATEWAY)))
@@ -485,13 +485,13 @@ func startAttack(hwnd syscall.Handle, targets []net.IP, tag string) {
 	if gwText != "" {
 		gip = net.ParseIP(gwText)
 		if gip == nil || gip.To4() == nil {
-			msgBox("提示", "网关 IP 无效", MB_ICONWARNING)
+			msgBox("Notice", "invalid gateway IP", MB_ICONWARNING)
 			return
 		}
 	} else if iface.Gateway != nil {
 		gip = iface.Gateway
 	} else {
-		msgBox("提示", "未知网关，请填写网关 IP", MB_ICONWARNING)
+		msgBox("Notice", "unknown gateway, please enter the gateway IP", MB_ICONWARNING)
 		return
 	}
 	intervalMs, _ := strconv.Atoi(strings.TrimSpace(getText(getCtrl(hwnd, IDC_INTERVAL))))
@@ -513,18 +513,18 @@ func startAttack(hwnd syscall.Handle, targets []net.IP, tag string) {
 	}
 	g.stopCh = make(chan struct{})
 	setBusy(hwnd, false, true)
-	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("状态: 攻击中 | 目标 %d | %s", len(targets), tag))
-	appendLog(fmt.Sprintf("[*] 启动多线程攻击: %d 个目标 (%s)", len(targets), tag))
+	setText(getCtrl(hwnd, IDC_STATUS), fmt.Sprintf("Status: attacking | targets %d | %s", len(targets), tag))
+	appendLog(fmt.Sprintf("[*] start multi-thread attack: %d target(s) (%s)", len(targets), tag))
 	for _, t := range targets {
-		appendLog("    目标: " + t.String())
+		appendLog("    target: " + t.String())
 	}
 	stop := g.stopCh
 	go func() {
 		err := poisonLoopConcurrent(iface, targets, gip.To4(), time.Duration(intervalMs)*time.Millisecond, oneWay, nil, resolveName, workers, stop, appendLog)
 		if err != nil {
-			appendLog("[-] 攻击结束错误: " + err.Error())
+			appendLog("[-] attack end error: " + err.Error())
 		} else {
-			appendLog("[+] 攻击已停止")
+			appendLog("[+] attack stopped")
 		}
 		postUI(WM_APPDONE, 2, 0)
 	}()
@@ -544,17 +544,17 @@ func attackSelected(hwnd syscall.Handle) {
 	if len(targets) == 0 {
 		spec := strings.TrimSpace(getText(getCtrl(hwnd, IDC_TARGET)))
 		if spec == "" {
-			msgBox("提示", "请先在列表中勾选设备，或填写目标 IP/段", MB_ICONWARNING)
+			msgBox("Notice", "check devices in the list first, or enter a target IP/range", MB_ICONWARNING)
 			return
 		}
 		ips, err := parseIPList(spec)
 		if err != nil {
-			msgBox("错误", err.Error(), MB_ICONERROR)
+			msgBox("Error", err.Error(), MB_ICONERROR)
 			return
 		}
 		targets = ips
 	}
-	startAttack(hwnd, targets, "选中/指定目标")
+	startAttack(hwnd, targets, "selected/specified targets")
 }
 
 func attackRange(hwnd syscall.Handle) {
@@ -563,10 +563,10 @@ func attackRange(hwnd syscall.Handle) {
 	spec := strings.TrimSpace(getText(getCtrl(hwnd, IDC_TARGET)))
 	ips, err := collectTargets(spec, from, to)
 	if err != nil {
-		msgBox("错误", err.Error(), MB_ICONERROR)
+		msgBox("Error", err.Error(), MB_ICONERROR)
 		return
 	}
-	startAttack(hwnd, ips, "IP段批量")
+	startAttack(hwnd, ips, "IP-range batch")
 }
 
 func stopAttack(hwnd syscall.Handle) {
@@ -577,8 +577,8 @@ func stopAttack(hwnd syscall.Handle) {
 			close(g.stopCh)
 		}
 	}
-	appendLog("[*] 正在请求停止攻击...")
-	setText(getCtrl(hwnd, IDC_STATUS), "状态: 正在停止...")
+	appendLog("[*] requesting attack stop...")
+	setText(getCtrl(hwnd, IDC_STATUS), "Status: stopping...")
 }
 
 func onCreate(hwnd syscall.Handle) {
@@ -596,50 +596,50 @@ func onCreate(hwnd syscall.Handle) {
 	g.hFont = syscall.Handle(hf)
 
 	y := 10
-	createChild("STATIC", "网卡:", WS_CHILD|WS_VISIBLE|SS_LEFT, 10, y+4, 50, 22, hwnd, 2001)
+	createChild("STATIC", "NIC:", WS_CHILD|WS_VISIBLE|SS_LEFT, 10, y+4, 50, 22, hwnd, 2001)
 	createChild("COMBOBOX", "", WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL, 60, y, 520, 200, hwnd, IDC_IFACE)
-	createChild("BUTTON", "刷新网卡", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 590, y, 90, 28, hwnd, IDC_BTN_REFRESH)
+	createChild("BUTTON", "Refresh NICs", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 590, y, 90, 28, hwnd, IDC_BTN_REFRESH)
 	y += 36
-	createChild("STATIC", "扫描网段:", WS_CHILD|WS_VISIBLE, 10, y+4, 70, 22, hwnd, 2002)
+	createChild("STATIC", "Scan range:", WS_CHILD|WS_VISIBLE, 10, y+4, 70, 22, hwnd, 2002)
 	createChild("EDIT", "192.168.31.0/24", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL, 80, y, 160, 26, hwnd, IDC_CIDR)
-	createChild("STATIC", "线程数:", WS_CHILD|WS_VISIBLE, 250, y+4, 55, 22, hwnd, 2003)
+	createChild("STATIC", "Threads:", WS_CHILD|WS_VISIBLE, 250, y+4, 55, 22, hwnd, 2003)
 	createChild("EDIT", "64", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_NUMBER|ES_AUTOHSCROLL, 305, y, 50, 26, hwnd, IDC_WORKERS)
-	createChild("STATIC", "间隔ms:", WS_CHILD|WS_VISIBLE, 365, y+4, 55, 22, hwnd, 2004)
+	createChild("STATIC", "Interval ms:", WS_CHILD|WS_VISIBLE, 365, y+4, 55, 22, hwnd, 2004)
 	createChild("EDIT", "1000", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_NUMBER|ES_AUTOHSCROLL, 420, y, 60, 26, hwnd, IDC_INTERVAL)
-	createChild("STATIC", "网关:", WS_CHILD|WS_VISIBLE, 490, y+4, 40, 22, hwnd, 2005)
+	createChild("STATIC", "Gateway:", WS_CHILD|WS_VISIBLE, 490, y+4, 40, 22, hwnd, 2005)
 	createChild("EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL, 530, y, 150, 26, hwnd, IDC_GATEWAY)
 	y += 36
-	createChild("STATIC", "目标IP/段:", WS_CHILD|WS_VISIBLE, 10, y+4, 75, 22, hwnd, 2006)
+	createChild("STATIC", "Target IP/range:", WS_CHILD|WS_VISIBLE, 10, y+4, 75, 22, hwnd, 2006)
 	createChild("EDIT", "192.168.31.105-192.168.31.110", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL, 85, y, 260, 26, hwnd, IDC_TARGET)
-	createChild("STATIC", "从:", WS_CHILD|WS_VISIBLE, 355, y+4, 25, 22, hwnd, 2007)
+	createChild("STATIC", "From:", WS_CHILD|WS_VISIBLE, 355, y+4, 25, 22, hwnd, 2007)
 	createChild("EDIT", "192.168.31.105", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL, 380, y, 120, 26, hwnd, IDC_FROM)
-	createChild("STATIC", "到:", WS_CHILD|WS_VISIBLE, 510, y+4, 25, 22, hwnd, 2008)
+	createChild("STATIC", "To:", WS_CHILD|WS_VISIBLE, 510, y+4, 25, 22, hwnd, 2008)
 	createChild("EDIT", "192.168.31.110", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|ES_AUTOHSCROLL, 535, y, 145, 26, hwnd, IDC_TO)
 	y += 36
-	createChild("BUTTON", "解析设备名称", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX, 10, y, 120, 24, hwnd, IDC_NAME)
-	createChild("BUTTON", "仅单向污染", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX, 140, y, 110, 24, hwnd, IDC_ONEWAY)
+	createChild("BUTTON", "Resolve device name", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX, 10, y, 120, 24, hwnd, IDC_NAME)
+	createChild("BUTTON", "One-way poison only", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX, 140, y, 110, 24, hwnd, IDC_ONEWAY)
 	setChecked(hwnd, IDC_NAME, true)
-	createChild("BUTTON", "扫描局域网", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 270, y-2, 100, 28, hwnd, IDC_BTN_SCAN)
-	createChild("BUTTON", "全选列表", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 380, y-2, 90, 28, hwnd, IDC_BTN_SELECT_ALL)
-	createChild("BUTTON", "攻击选中", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 480, y-2, 90, 28, hwnd, IDC_BTN_ATTACK_SEL)
-	createChild("BUTTON", "攻击IP段", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 580, y-2, 90, 28, hwnd, IDC_BTN_ATTACK_RANGE)
+	createChild("BUTTON", "Scan LAN", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 270, y-2, 100, 28, hwnd, IDC_BTN_SCAN)
+	createChild("BUTTON", "Select all", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 380, y-2, 90, 28, hwnd, IDC_BTN_SELECT_ALL)
+	createChild("BUTTON", "Attack selected", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 480, y-2, 90, 28, hwnd, IDC_BTN_ATTACK_SEL)
+	createChild("BUTTON", "Attack IP range", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 580, y-2, 90, 28, hwnd, IDC_BTN_ATTACK_RANGE)
 	y += 34
-	createChild("BUTTON", "停止并恢复", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 10, y, 110, 28, hwnd, IDC_BTN_STOP)
-	createChild("BUTTON", "清空日志", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 130, y, 90, 28, hwnd, IDC_BTN_CLEAR_LOG)
-	createChild("STATIC", "状态: 界面已就绪", WS_CHILD|WS_VISIBLE, 240, y+5, 440, 22, hwnd, IDC_STATUS)
+	createChild("BUTTON", "Stop & restore", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 10, y, 110, 28, hwnd, IDC_BTN_STOP)
+	createChild("BUTTON", "Clear log", WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 130, y, 90, 28, hwnd, IDC_BTN_CLEAR_LOG)
+	createChild("STATIC", "Status: UI ready", WS_CHILD|WS_VISIBLE, 240, y+5, 440, 22, hwnd, IDC_STATUS)
 	y += 36
-	createChild("STATIC", "设备列表（可多选）:", WS_CHILD|WS_VISIBLE, 10, y, 200, 20, hwnd, 2009)
+	createChild("STATIC", "Device list (multi-select):", WS_CHILD|WS_VISIBLE, 10, y, 200, 20, hwnd, 2009)
 	y += 22
 	createChild("LISTBOX", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_TABSTOP|WS_VSCROLL|WS_HSCROLL|LBS_NOTIFY|LBS_EXTENDEDSEL|LBS_HASSTRINGS, 10, y, 680, 180, hwnd, IDC_HOSTLIST)
 	y += 190
-	createChild("STATIC", "运行日志:", WS_CHILD|WS_VISIBLE, 10, y, 100, 20, hwnd, 2010)
+	createChild("STATIC", "Log:", WS_CHILD|WS_VISIBLE, 10, y, 100, 20, hwnd, 2010)
 	y += 22
 	createChild("EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|WS_HSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_AUTOHSCROLL|ES_READONLY, 10, y, 680, 170, hwnd, IDC_LOG)
 
 	setBusy(hwnd, false, false)
 	pEnableWindow.Call(uintptr(getCtrl(hwnd, IDC_BTN_STOP)), 0)
-	// 不在这里做任何网络/Npcap 调用
-	setText(getCtrl(hwnd, IDC_STATUS), "状态: 界面已就绪，正在后台加载网卡...")
+	// Do not make any network/Npcap calls here
+	setText(getCtrl(hwnd, IDC_STATUS), "Status: UI ready, loading NICs in background...")
 	postUI(WM_APPBOOT, 0, 0)
 }
 
@@ -690,23 +690,23 @@ func wndProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
 		fillHostList(hwnd)
 		return 0
 	case WM_APPBOOT:
-		appendLog("winarp GUI - CTF 局域网扫描 / 多线程 ARP 污染")
-		appendLog("提示: 需要管理员权限 + Npcap；仅用于授权 CTF 沙箱")
+		appendLog("winarp GUI - CTF LAN scan / multi-thread ARP poison")
+		appendLog("Tip: requires admin + Npcap; for authorized CTF sandbox only")
 		go loadIfacesAsync()
 		return 0
 	case WM_APPIFACES:
 		if wParam == 0 {
 			applyIfacesUI(hwnd)
 		} else {
-			setText(getCtrl(hwnd, IDC_STATUS), "状态: 网卡加载失败")
+			setText(getCtrl(hwnd, IDC_STATUS), "Status: NIC load failed")
 		}
 		return 0
 	case WM_APPDONE:
 		setBusy(hwnd, false, false)
 		if wParam == 2 {
-			setText(getCtrl(hwnd, IDC_STATUS), "状态: 已停止")
+			setText(getCtrl(hwnd, IDC_STATUS), "Status: stopped")
 		} else if wParam == 1 {
-			setText(getCtrl(hwnd, IDC_STATUS), "状态: 扫描失败")
+			setText(getCtrl(hwnd, IDC_STATUS), "Status: scan failed")
 		}
 		return 0
 	case WM_DESTROY:
@@ -725,7 +725,7 @@ func wndProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
 }
 
 func runGUI() error {
-	// 关键：GUI 消息循环必须固定在同一 OS 线程
+	// Important: the GUI message loop must stay on the same OS thread
 	runtime.LockOSThread()
 
 	// common controls best-effort
@@ -753,7 +753,7 @@ func runGUI() error {
 	hwnd, _, err := pCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
-		uintptr(unsafe.Pointer(u16("winarp - 局域网扫描与ARP污染 (CTF)"))),
+		uintptr(unsafe.Pointer(u16("winarp - LAN scan & ARP poison (CTF)"))),
 		uintptr(WS_OVERLAPPEDWINDOW|WS_VISIBLE),
 		uintptr(120), uintptr(80), uintptr(720), uintptr(640),
 		0, 0, hInst, 0,

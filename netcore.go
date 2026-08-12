@@ -305,8 +305,8 @@ func matchPcapName(iface IfaceInfo, names []string) string {
 }
 
 func fillPcapNames(ifaces []IfaceInfo) []IfaceInfo {
-	// 启动时不要调用 PacketGetAdapterNames（可能卡住）。
-	// 直接用适配器 GUID 构造 Npcap 名；发包时再按需打开。
+	// Do not call PacketGetAdapterNames at startup (it may hang).
+	// Build the Npcap name directly from the adapter GUID; open on demand when sending.
 	for i := range ifaces {
 		ifaces[i].PcapName = npfNameFromGUID(ifaces[i].Name)
 	}
@@ -664,7 +664,7 @@ func scanLAN(iface IfaceInfo, cidr string, workers int, timeout time.Duration, r
 	}
 	jobs := make(chan net.IP, len(targets))
 	results := make(chan result, len(targets))
-	// 第一阶段：只做 ARP，名称解析放到第二阶段限流，避免界面卡死
+	// Phase 1: ARP only; name resolution is throttled in phase 2 to avoid UI freeze
 	for i := 0; i < workers; i++ {
 		go func() {
 			for ip := range jobs {
@@ -688,7 +688,7 @@ func scanLAN(iface IfaceInfo, cidr string, workers int, timeout time.Duration, r
 			hosts = append(hosts, r.h)
 		}
 	}
-	// 第二阶段：限制并发解析名称
+	// Phase 2: resolve names with limited concurrency
 	if resolveName && len(hosts) > 0 {
 		nameWorkers := 8
 		if nameWorkers > len(hosts) {

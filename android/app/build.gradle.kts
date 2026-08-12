@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "com.winarp.mobile"
     compileSdk = 34
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.winarp.mobile"
@@ -21,8 +21,26 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
-                arguments += listOf("-DANDROID_STL=c++_shared")
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    // 16 KB page-size alignment (Android 15+ / devices with 16 KB pages)
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                )
             }
+        }
+    }
+
+    signingConfigs {
+        // Fixed key committed to the repo so every CI build shares one signature.
+        // This keeps the installed package's signature (and uid) stable, so updates
+        // install with `pm install -r` without an uninstall and root grants persist.
+        // Debug-only convenience key for this CTF/testing tool — not a production secret.
+        create("stable") {
+            storeFile = file("winarp-debug.p12")
+            storePassword = "winarp123"
+            keyAlias = "winarp"
+            keyPassword = "winarp123"
+            storeType = "PKCS12"
         }
     }
 
@@ -38,6 +56,7 @@ android {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 

@@ -9,15 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winarp.mobile.ui.MainViewModel
-import com.winarp.mobile.ui.WinArpScreen
-import com.winarp.mobile.ui.theme.NightBg
+import com.winarp.mobile.ui.WinArpRoot
 import com.winarp.mobile.ui.theme.WinArpTheme
 
 class MainActivity : ComponentActivity() {
@@ -36,30 +30,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WinArpTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = NightBg) {
-                    val state by vm.state.collectAsStateWithLifecycle()
-                    WinArpScreen(
-                        state = state,
-                        onRefreshIfaces = vm::refreshIfaces,
-                        onSelectIface = vm::selectIface,
-                        onCidr = vm::updateCidr,
-                        onWorkers = vm::updateWorkers,
-                        onInterval = vm::updateInterval,
-                        onGateway = vm::updateGateway,
-                        onTarget = vm::updateTargetSpec,
-                        onFrom = vm::updateFromIp,
-                        onTo = vm::updateToIp,
-                        onResolveName = vm::updateResolveName,
-                        onOneWay = vm::updateOneWay,
-                        onScan = vm::scan,
-                        onSelectAll = vm::selectAllHosts,
-                        onToggleHost = vm::toggleHost,
-                        onAttackSelected = vm::attackSelected,
-                        onAttackRange = vm::attackRange,
-                        onStop = vm::stopAttack,
-                        onClearLog = vm::clearLogs
-                    )
-                }
+                WinArpRoot(vm)
             }
         }
     }

