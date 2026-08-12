@@ -46,10 +46,12 @@ fun WinArpRoot(vm: MainViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val editIp = state.editHostIp
     if (editIp != null) {
+        val bps by vm.hostBps.collectAsStateWithLifecycle()
         HostControlScreen(
             ip = editIp,
             name = state.hosts.firstOrNull { it.ip == editIp }?.name ?: "",
             control = state.hostControls[editIp] ?: com.winarp.mobile.data.HostControl(),
+            bps = bps,
             onEdit = vm::editHostControl,
             onApply = vm::applyHostControls,
             onBack = vm::closeHostControls

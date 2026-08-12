@@ -1,5 +1,6 @@
 package com.winarp.mobile.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -32,11 +34,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.util.Locale
 import com.winarp.mobile.data.HostControl
 import com.winarp.mobile.ui.theme.Accent
 import com.winarp.mobile.ui.theme.Danger
@@ -52,6 +57,7 @@ fun HostControlScreen(
     ip: String,
     name: String,
     control: HostControl,
+    bps: Double,
     onEdit: (String, (HostControl) -> HostControl) -> Unit,
     onApply: () -> Unit,
     onBack: () -> Unit
@@ -87,6 +93,8 @@ fun HostControlScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Spacer(Modifier.height(4.dp))
+
+            SpeedMeter(bps = bps, capKbps = control.kbps)
 
             LabeledSlider(
                 icon = { Icon(Icons.Outlined.Speed, null, tint = Accent) },
@@ -208,4 +216,44 @@ private fun SwitchRow(
             )
         )
     }
+}
+
+@Composable
+private fun SpeedMeter(bps: Double, capKbps: Int) {
+    val shown by animateFloatAsState(bps.toFloat(), label = "spd")
+    val capBps = if (capKbps > 0) capKbps * 1000.0 else 0.0
+    val frac = if (capBps > 0) (shown / capBps).coerceIn(0f, 1f) else (shown / 1.0e8f).coerceIn(0f, 1f)
+    val atCap = capBps > 0 && shown >= capBps * 0.95
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Live throughput (real)", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(2.dp))
+        val (num, unit) = fmtSpeed(shown.toDouble())
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(num, color = if (atCap) Warning else Accent, fontWeight = FontWeight.Bold, fontSize = 44.sp)
+            Spacer(Modifier.width(6.dp))
+            Text(unit, color = TextSecondary, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { frac },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp),
+            color = if (atCap) Warning else Accent,
+            trackColor = Stroke
+        )
+        Text(
+            if (capKbps > 0) "capped at " + (if (capKbps >= 1000) String.format(Locale.US, "%.1f Mbps", capKbps / 1000.0) else "$capKbps kbps")
+            else "no cap — set a bandwidth limit below and Apply",
+            color = TextSecondary,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+private fun fmtSpeed(bps: Double): Pair<String, String> = when {
+    bps >= 1_000_000 -> String.format(Locale.US, "%.1f", bps / 1_000_000) to "Mbps"
+    bps >= 1000 -> String.format(Locale.US, "%.0f", bps / 1000) to "kbps"
+    else -> String.format(Locale.US, "%.0f", bps) to "bps"
 }

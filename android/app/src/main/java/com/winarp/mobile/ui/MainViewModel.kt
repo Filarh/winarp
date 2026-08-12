@@ -33,8 +33,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -104,6 +108,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val fileLog = FileLogger(app)
     private val tls = TlsMitm()
     private val tlsPort = 8443
+
+    private val _hostBps = MutableStateFlow(0.0)
+    val hostBps: StateFlow<Double> = _hostBps.asStateFlow()
+    private var meterJob: Job? = null
 
     init {
         // restore sticky settings from previous runs
@@ -459,8 +467,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Per-host traffic controls (bandwidth / latency / loss / block / proxy) ----
 
-    fun openHostControls(ip: String) = _state.update { it.copy(editHostIp = ip) }
-    fun closeHostControls() = _state.update { it.copy(editHostIp = null) }
+    fun openHostControls(ip: String) {
+        _state.update { it.copy(editHostIp = ip) }
+        startMeter(ip)
+    }
+
+    fun closeHostControls() {
+        stopMeter()
+        _state.update { it.copy(editHostIp = null) }
+    }
+
+    /** Live REAL throughput (bits/s) of the host's forwarded traffic, polled from iptables counters. */
+    private fun startMeter(ip: String) {
+        val iface = _state.value.selectedIface ?: return
+        meterJob?.cancel()
+        _hostBps.value = 0.0
+        meterJob = viewModelScope.launch(Dispatchers.IO) {
+            RootNet.meterOn(iface.name, ip)
+            var prev = RootNet.readMeterBytes(ip)
+            var prevT = SystemClock.elapsedRealtime()
+            while (isActive) {
+                delay(1000)
+                val cur = RootNet.readMeterBytes(ip)
+                val now = SystemClock.elapsedRealtime()
+                val dt = (now - prevT) / 1000.0
+                if (dt > 0) _hostBps.value = (cur - prev).coerceAtLeast(0L) * 8.0 / dt
+                prev = cur; prevT = now
+            }
+        }
+    }
+
+    private fun stopMeter() {
+        meterJob?.cancel(); meterJob = null
+        _hostBps.value = 0.0
+        viewModelScope.launch { RootNet.meterOff() }
+    }
 
     fun editHostControl(ip: String, edit: (HostControl) -> HostControl) {
         _state.update { st ->
@@ -488,6 +529,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (te == null) appendLog("[+] TLS MITM (:443) ready on :$tlsPort — decrypts non-validating/CA-trusting hosts")
                 else appendLog("[!] TLS proxy: $te")
             }
+        }
+        // Limiting/blocking IS an attack: the host's traffic must transit this device. Start MITM on
+        // the controlled hosts so the shaping actually bites (this is why a cap did nothing before).
+        val targets = map.filterValues { it.active }.keys.toList()
+        if (targets.isNotEmpty() && !_state.value.attacking) {
+            _state.update { it.copy(forwardMitm = true) }
+            startAttack(targets, "limit")
         }
         viewModelScope.launch {
             val err = RootNet.applyControls(iface.name, map, _state.value.spoofConfig.port, tlsPort)

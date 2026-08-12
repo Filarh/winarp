@@ -116,6 +116,34 @@ object RootNet {
         }
     }
 
+    /** Start byte accounting for one host's forwarded traffic (both directions) — for a live meter. */
+    suspend fun meterOn(ifName: String, ip: String) {
+        RootHelper.execSu(
+            "iptables -N WINARP_METER 2>/dev/null; iptables -C FORWARD -j WINARP_METER 2>/dev/null || iptables -I FORWARD 1 -j WINARP_METER; " +
+                "iptables -F WINARP_METER; " +
+                "iptables -A WINARP_METER -i $ifName -s $ip; " +
+                "iptables -A WINARP_METER -i $ifName -d $ip; echo DONE"
+        )
+    }
+
+    /** Total bytes counted so far for [ip] (up + down). */
+    suspend fun readMeterBytes(ip: String): Long = withContext(Dispatchers.IO) {
+        val (_, out) = RootHelper.execSu("iptables -L WINARP_METER -v -n -x 2>/dev/null")
+        var total = 0L
+        for (raw in out.lineSequence()) {
+            if (!raw.contains(ip)) continue
+            val m = Regex("""^\s*\d+\s+(\d+)\s""").find(raw) ?: continue
+            total += m.groupValues[1].toLongOrNull() ?: 0L
+        }
+        total
+    }
+
+    suspend fun meterOff() {
+        RootHelper.execSu(
+            "iptables -F WINARP_METER 2>/dev/null; iptables -D FORWARD -j WINARP_METER 2>/dev/null; iptables -X WINARP_METER 2>/dev/null; echo DONE"
+        )
+    }
+
     /** Remove all per-host controls (tc + iptables chains). */
     suspend fun clearControls(ifName: String) {
         RootHelper.execSu(
