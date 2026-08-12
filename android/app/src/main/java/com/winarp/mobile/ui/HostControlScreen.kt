@@ -44,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import com.winarp.mobile.data.HostControl
+import com.winarp.mobile.data.InterceptPlan
+import com.winarp.mobile.data.InterceptStep
+import com.winarp.mobile.data.InterceptTier
 import com.winarp.mobile.ui.theme.Accent
 import com.winarp.mobile.ui.theme.Danger
 import com.winarp.mobile.ui.theme.Mint
@@ -61,6 +64,7 @@ fun HostControlScreen(
     bps: Double,
     mitm: Boolean,
     attacking: Boolean,
+    plan: com.winarp.mobile.data.InterceptPlan,
     onEdit: (String, (HostControl) -> HostControl) -> Unit,
     onApply: () -> Unit,
     onBack: () -> Unit
@@ -105,6 +109,8 @@ fun HostControlScreen(
                 mitm = mitm,
                 attacking = attacking
             )
+
+            InterceptPlanCard(plan)
 
             LabeledSlider(
                 icon = { Icon(Icons.Outlined.Speed, null, tint = Accent) },
@@ -283,6 +289,47 @@ private fun SpeedMeter(bps: Double, capKbps: Int, blocked: Boolean, mitm: Boolea
                     style = MaterialTheme.typography.labelSmall
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun InterceptPlanCard(plan: InterceptPlan) {
+    SectionCard(
+        title = "Interception plan · ${plan.platform.label}",
+        icon = { Icon(Icons.Outlined.NetworkCheck, null, tint = if (plan.hasNetworkPath) Mint else TextSecondary) }
+    ) {
+        Text(plan.summary, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(10.dp))
+        plan.ladder.forEachIndexed { i, step ->
+            InterceptStepRow(i + 1, step)
+            if (i < plan.ladder.lastIndex) Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun InterceptStepRow(n: Int, step: InterceptStep) {
+    val color = when (step.tier) {
+        InterceptTier.IN_PROCESS -> Mint
+        InterceptTier.CA_INSTALL -> Accent
+        InterceptTier.TRANSPARENT_MITM -> Warning
+        InterceptTier.METADATA_ONLY -> TextSecondary
+    }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("$n", color = color, fontWeight = FontWeight.Bold, modifier = Modifier.width(18.dp))
+            Text(step.title, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(
+                if (step.automatable) "in-app" else "on device",
+                color = if (step.automatable) Mint else Warning,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+        Text(step.tier.label, color = color, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 18.dp))
+        Text(step.why, color = TextSecondary, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 18.dp, top = 2.dp))
+        step.steps.forEach { s ->
+            Text("• $s", color = TextSecondary, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 22.dp, top = 1.dp))
         }
     }
 }

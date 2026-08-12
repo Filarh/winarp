@@ -54,6 +54,7 @@ fun WinArpRoot(vm: MainViewModel) {
             bps = bps,
             mitm = state.forwardMitm,
             attacking = state.attacking,
+            plan = vm.interceptPlanFor(editIp),
             onEdit = vm::editHostControl,
             onApply = vm::applyHostControls,
             onBack = vm::closeHostControls

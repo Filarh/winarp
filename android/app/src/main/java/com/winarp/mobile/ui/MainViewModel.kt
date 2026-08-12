@@ -534,6 +534,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Per-host traffic controls (bandwidth / latency / loss / block / proxy) ----
 
+    /** Best-first, honest interception plan for a host, from its vendor/name fingerprint. */
+    fun interceptPlanFor(ip: String): com.winarp.mobile.data.InterceptPlan {
+        val host = _state.value.hosts.firstOrNull { it.ip == ip }
+        val vendor = host?.mac?.let { OuiDb.vendor(it) }
+        return com.winarp.mobile.net.InterceptPlanner.plan(vendor, host?.name)
+    }
+
     fun openHostControls(ip: String) {
         _state.update { it.copy(editHostIp = ip) }
         startMeter(ip)
