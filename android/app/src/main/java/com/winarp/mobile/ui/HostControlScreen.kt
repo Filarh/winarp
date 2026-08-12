@@ -1,5 +1,6 @@
 package com.winarp.mobile.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,7 @@ fun HostControlScreen(
     onApply: () -> Unit,
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
     Scaffold(
         containerColor = NightBg,
         topBar = {

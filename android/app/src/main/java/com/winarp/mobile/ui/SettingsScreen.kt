@@ -1,6 +1,7 @@
 package com.winarp.mobile.ui
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -62,6 +63,7 @@ fun SettingsScreen(
     onToggleAutoRestore: () -> Unit,
     onExportCa: () -> String?
 ) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     Scaffold(
         containerColor = NightBg,

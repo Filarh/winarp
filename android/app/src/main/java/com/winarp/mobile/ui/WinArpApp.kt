@@ -139,7 +139,9 @@ fun WinArpRoot(vm: MainViewModel) {
                     onToggleMitm = vm::updateForwardMitm,
                     onAttackSelected = vm::attackSelected,
                     onAttackRange = vm::attackRange,
-                    onStop = vm::stopAttack
+                    onStop = vm::stopAttack,
+                    hostControls = state.hostControls,
+                    onClearLimits = vm::clearHostControls
                 )
 
                 Tab.Sniff -> {

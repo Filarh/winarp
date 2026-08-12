@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,7 +45,9 @@ fun AttackTab(
     onToggleMitm: (Boolean) -> Unit,
     onAttackSelected: () -> Unit,
     onAttackRange: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    hostControls: Map<String, com.winarp.mobile.data.HostControl>,
+    onClearLimits: () -> Unit
 ) {
     val fieldColors = winArpFieldColors()
     LazyColumn(
@@ -54,6 +57,27 @@ fun AttackTab(
     ) {
         item {
             StatusHero(state.status, state.scanning, state.attacking, state.scanProgress, state.nativeLoaded)
+        }
+        val activeLimits = hostControls.filterValues { it.active }
+        if (activeLimits.isNotEmpty()) {
+            item {
+                SectionCard(title = "Active per-host limits · ${activeLimits.size}", icon = { Icon(Icons.Outlined.Speed, null, tint = Warning) }) {
+                    activeLimits.forEach { (ip, c) ->
+                        val bits = buildList {
+                            if (c.kbps > 0) add("${c.kbps} kbps")
+                            if (c.delayMs > 0) add("${c.delayMs}ms")
+                            if (c.lossPct > 0) add("${c.lossPct}% loss")
+                            if (c.blocked) add("blocked")
+                            if (c.proxied) add("proxied")
+                        }.joinToString(" · ")
+                        Text("$ip   $bits", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = onClearLimits, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                        Text("Clear all limits")
+                    }
+                }
+            }
         }
         item {
             SectionCard(title = "Target IP / range", icon = { Icon(Icons.Outlined.Bolt, null, tint = Warning) }) {

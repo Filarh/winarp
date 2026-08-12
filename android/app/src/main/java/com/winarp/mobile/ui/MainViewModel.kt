@@ -380,10 +380,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopAttack() {
+        val iface = _state.value.selectedIface
+        val hadControls = _state.value.hostControls.isNotEmpty()
         viewModelScope.launch {
             _state.update { it.copy(status = "Stopping...") }
             poisoner.stop { appendLog(it) }
-            _state.update { it.copy(attacking = false, status = "Stopped") }
+            // limits/blocks/proxy only make sense while attacking — clear them so nothing lingers
+            if (hadControls && iface != null) {
+                RootNet.clearControls(iface.name)
+                appendLog("[+] host limits cleared")
+            }
+            _state.update { it.copy(attacking = false, status = "Stopped", hostControls = emptyMap()) }
         }
     }
 
