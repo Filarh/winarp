@@ -106,7 +106,7 @@ fun WinArpRoot(vm: MainViewModel) {
             val active = buildSet {
                 if (state.scanning) add(Tab.Scan)
                 if (state.attacking || state.hostControls.values.any { it.active }) add(Tab.Attack)
-                if (capturing) add(Tab.Sniff)
+                if (capturing || state.interceptHttps) add(Tab.Sniff)
                 if (serving) add(Tab.Spoof)
             }
             BottomNav(state.tab, active, vm::selectTab)
@@ -141,6 +141,7 @@ fun WinArpRoot(vm: MainViewModel) {
                     onTo = vm::updateToIp,
                     onOneWay = vm::updateOneWay,
                     onToggleMitm = vm::updateForwardMitm,
+                    onToggleInterceptHttps = { vm.toggleInterceptHttps() },
                     onAttackSelected = vm::attackSelected,
                     onAttackRange = vm::attackRange,
                     onStop = vm::stopAttack,
@@ -153,15 +154,18 @@ fun WinArpRoot(vm: MainViewModel) {
                     val raw by vm.captureRaw.collectAsStateWithLifecycle()
                     val running by vm.captureRunning.collectAsStateWithLifecycle()
                     val ctarget by vm.captureTarget.collectAsStateWithLifecycle()
+                    val intercept by vm.intercept.collectAsStateWithLifecycle()
                     SniffTab(
                         target = ctarget,
                         running = running,
                         peers = peers,
                         raw = raw,
+                        intercept = intercept,
                         showRaw = state.showRaw,
                         forcePlaintext = state.forcePlaintext,
                         onToggleCapture = vm::toggleCapture,
                         onClear = vm::clearCapture,
+                        onClearIntercept = vm::clearIntercept,
                         onToggleRaw = vm::toggleRaw,
                         onToggleForcePlaintext = vm::toggleForcePlaintext
                     )

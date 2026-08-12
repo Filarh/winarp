@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -53,10 +54,12 @@ fun SniffTab(
     running: Boolean,
     peers: List<CapturePeer>,
     raw: List<String>,
+    intercept: List<String>,
     showRaw: Boolean,
     forcePlaintext: Boolean,
     onToggleCapture: () -> Unit,
     onClear: () -> Unit,
+    onClearIntercept: () -> Unit,
     onToggleRaw: () -> Unit,
     onToggleForcePlaintext: () -> Unit
 ) {
@@ -102,6 +105,9 @@ fun SniffTab(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (intercept.isNotEmpty()) {
+                item { InterceptPanel(intercept, onClearIntercept) }
+            }
             item {
                 Text(
                     "Peers · ${peers.size}",
@@ -188,6 +194,46 @@ private fun PeerRow(peer: CapturePeer) {
                     Text("${ep.packets} · ${fmtBytes(ep.bytes)}", color = TextSecondary, fontSize = 12.sp)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun InterceptPanel(lines: List<String>, onClear: () -> Unit) {
+    val creds = lines.count { it.contains("[CREDS]") }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF10182B))
+            .border(1.dp, Mint, RoundedCornerShape(14.dp))
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Decrypted HTTPS", color = Mint, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (creds > 0) {
+                Text("$creds creds", color = Danger, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(8.dp))
+            }
+            TextButton(onClick = onClear) { Text("Clear", color = TextSecondary) }
+        }
+        Spacer(Modifier.height(4.dp))
+        lines.takeLast(60).asReversed().forEach { l ->
+            val color = when {
+                l.contains("[CREDS]") -> Danger
+                l.contains("pinned") -> TextSecondary
+                else -> Color(0xFFB7C7E6)
+            }
+            Text(
+                l.substringAfter("  ").ifBlank { l },
+                color = color,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(vertical = 1.dp)
+            )
         }
     }
 }

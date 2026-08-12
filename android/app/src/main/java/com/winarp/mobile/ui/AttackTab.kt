@@ -43,6 +43,7 @@ fun AttackTab(
     onTo: (String) -> Unit,
     onOneWay: (Boolean) -> Unit,
     onToggleMitm: (Boolean) -> Unit,
+    onToggleInterceptHttps: (Boolean) -> Unit,
     onAttackSelected: () -> Unit,
     onAttackRange: () -> Unit,
     onStop: () -> Unit,
@@ -123,6 +124,22 @@ fun AttackTab(
                 }
                 Spacer(Modifier.height(10.dp))
                 MitmControl(on = state.forwardMitm, onToggle = onToggleMitm)
+                Spacer(Modifier.height(8.dp))
+                FilterChip(
+                    selected = state.interceptHttps,
+                    onClick = { onToggleInterceptHttps(!state.interceptHttps) },
+                    label = { Text(if (state.interceptHttps) "✓ Decrypt HTTPS (TLS MITM)" else "Decrypt HTTPS (TLS MITM)") },
+                    enabled = state.forwardMitm,
+                    colors = chipColors()
+                )
+                Text(
+                    if (!state.forwardMitm) "Enable Keep online (MITM) first — decryption needs the victim routed through us."
+                    else "Redirects every routed victim's :80/:443 into the local proxy and blocks QUIC/DoT. " +
+                        "Decrypted requests + credentials show on the Sniff tab. Pinned apps (banking, FB, IG) can't be decrypted — they're marked 'pinned'.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                )
                 Spacer(Modifier.height(8.dp))
                 FilterChip(
                     selected = state.oneWay,

